@@ -24,6 +24,7 @@ import logging
 from Authenticator import Authenticator
 from Fetcher import Fetcher
 import sys
+import Parsers
 
 class GCparser(object):
     def __init__(self, username = None, password = None, dataDir = "~/.geocaching/parser/"):
@@ -35,3 +36,7 @@ class GCparser(object):
     def die(self):
         """Unrecoverable error, terminate application"""
         sys.exit()
+
+    def myFinds(self):
+        """Parse: My Profile > My Logs > Geocaches > Found it"""
+        return Parsers.MyFinds(self)
