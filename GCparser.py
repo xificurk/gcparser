@@ -40,3 +40,7 @@ class GCparser(object):
     def myFinds(self):
         """Parse: My Profile > My Logs > Geocaches > Found it"""
         return Parsers.MyFinds(self)
+
+    def cache(self, guid = None, waypoint = None):
+        """Parse: Cache details page"""
+        return Parsers.Cache(self, guid = guid, waypoint = waypoint)
