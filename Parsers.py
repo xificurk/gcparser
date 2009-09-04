@@ -57,8 +57,7 @@ class MyFinds(BaseParser):
     def load(self):
         """Loads data from webpage"""
         if self.data is None:
-            #web = self.GCparser.fetch.fetch("http://www.geocaching.com/my/logs.aspx?s=1&lt=2", authenticate=True)
-            web = self.GCparser.fetch.fetch("http://localhost/sand/test.xificurk.html")
+            web = self.GCparser.fetch.fetch("http://www.geocaching.com/my/logs.aspx?s=1&lt=2", authenticate=True)
             self.readLines(web)
             if not self.checkLogin():
                 self.GCparser.auth.login()
