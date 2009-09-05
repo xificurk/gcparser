@@ -135,7 +135,7 @@ class Authenticator(object):
             self.log.warning("No geocaching.com credentials given, some features will be disabled.")
 
         dataDir = os.path.expanduser(dataDir)
-        if os.path.exists(dataDir):
+        if os.path.isdir(dataDir):
             self.dataDir = dataDir
             self.log.info("Setting data directory to '%s'." % dataDir)
         else:
