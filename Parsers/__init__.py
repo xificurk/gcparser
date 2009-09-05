@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-    GCparser.py - GCparser main class.
+    Parsers/__init__.py
     Copyright (C) 2009 Petr Morávek
 
     This file is part of GCparser.
@@ -20,28 +20,6 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 """
 
-import logging
-import sys
-
-from Authenticator import Authenticator
-from Fetcher import Fetcher
-import Parsers
-
-class GCparser(object):
-    def __init__(self, username = None, password = None, dataDir = "~/.geocaching/parser/"):
-        self.log = logging.getLogger("GCparser")
-
-        self.auth  = Authenticator(self, username, password, dataDir)
-        self.fetch = Fetcher(self)
-
-    def die(self):
-        """Unrecoverable error, terminate application"""
-        sys.exit()
-
-    def myFinds(self):
-        """Parse: My Profile > My Logs > Geocaches > Found it"""
-        return Parsers.MyFinds(self)
-
-    def cache(self, guid = None, waypoint = None):
-        """Parse: Cache details page"""
-        return Parsers.Cache(self, guid = guid, waypoint = waypoint)
+from .BaseParser import BaseParser
+from .Cache import Cache
+from .MyFinds import MyFinds

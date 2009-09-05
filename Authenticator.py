@@ -132,7 +132,7 @@ class Authenticator(object):
 
         line = webpage.readline()
         while line:
-            match = re.match('<input type="hidden" name="([^"]+)"[^>]+value="([^"]+)"', line.decode('utf-8'))
+            match = re.search('<input type="hidden" name="([^"]+)"[^>]+value="([^"]+)"', line.decode('utf-8'))
             if match:
                 data[match.group(1)] = match.group(2)
             line = webpage.readline()
