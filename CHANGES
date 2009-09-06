@@ -1,0 +1,24 @@
+CHANGES
+============================================================================
+
+Release 0.1.1 (2009-09-07)
+--------------------------
+
+[Enhancements]
+
+  * Example script.
+
+  * Better Parsers handling: it is possible to register own Parser, and all
+    parsers are now called via parse(name, args) method.
+
+[Bugfixes]
+
+  * Few minor bugfixes.
+
+
+Release 0.1 (2009-09-05)
+--------------------------
+
+[Enhancements]
+
+  * MyFinds and Cache parsers.
