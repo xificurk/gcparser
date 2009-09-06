@@ -29,20 +29,24 @@ class GCparser(object):
     def __init__(self, username = None, password = None, dataDir = "~/.geocaching/parser/"):
         self.log = logging.getLogger("GCparser")
 
-        self.auth  = Authenticator(self, username, password, dataDir)
-        self.fetch = Fetcher(self)
+        self.auth    = Authenticator(self, username, password, dataDir)
+        self.fetch   = Fetcher(self)
+        self.parsers = {}
+        # Register standard distribution parsers
+        self.registerParser("myFinds", Parsers.MyFinds)
+        self.registerParser("cache", Parsers.Cache)
 
     def die(self):
         """Unrecoverable error, terminate application"""
         sys.exit()
 
-    def myFinds(self):
-        """Parse: My Profile > My Logs > Geocaches > Found it"""
-        return Parsers.MyFinds(self)
+    def registerParser(self, name, handler):
+        """Register custom parser object"""
+        self.parsers[name] = handler
 
-    def cache(self, guid = None, waypoint = None, logs = None):
-        """Parse: Cache details page"""
-        return Parsers.Cache(self, guid = guid, waypoint = waypoint, logs = logs)
+    def parse(self, name, *args, **kwargs):
+        """Call parser of the name"""
+        return self.parsers[name](self, *args, **kwargs)
 
 
 
