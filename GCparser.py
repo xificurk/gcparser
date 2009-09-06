@@ -26,7 +26,7 @@ import http.cookiejar as CJ
 import Parsers
 
 class GCparser(object):
-    def __init__(self, username = None, password = None, dataDir = "~/.geocaching/parser/"):
+    def __init__(self, username = None, password = None, dataDir = "~/.geocaching/parser"):
         self.log = logging.getLogger("GCparser")
 
         self.auth    = Authenticator(self, username, password, dataDir)
@@ -129,7 +129,7 @@ class Fetcher(object):
 
 
 class Authenticator(object):
-    def __init__(self, GCparser, username = None, password = None, dataDir = "~/.geocaching/parser/"):
+    def __init__(self, GCparser, username = None, password = None, dataDir = "~/.geocaching/parser"):
         self.log = logging.getLogger("GCparser.Auth")
         self.GCparser = GCparser
 
@@ -151,7 +151,7 @@ class Authenticator(object):
 
     def cookieFileName(self):
         """Returns filename to store cookies"""
-        return self.dataDir + md5(self.username.encode("utf-8")).hexdigest() + ".cookie"
+        return "%s/%s.cookie" % (self.dataDir, md5(self.username.encode("utf-8")).hexdigest())
 
 
     def loadCookies(self):
