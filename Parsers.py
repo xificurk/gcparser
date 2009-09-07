@@ -80,6 +80,8 @@ class Cache(BaseParser):
         BaseParser.__init__(self, GCparser)
         self.log = logging.getLogger("GCparser.Cache")
         self.details = None
+        self.waypoint = waypoint
+        self.guid = guid
 
         if guid is None and waypoint is None:
             self.log.critical("No guid or waypoint given - don't know what to parse.")
@@ -121,6 +123,10 @@ class Cache(BaseParser):
         match = re.search("<span id=['\"]ErrorText['\"][^>]*><p>Sorry, the owner of this listing has made it viewable to subscribers only", self.data, re.I)
         if match:
             self.log.info("Subscribers only cache at '%s'." % self.url)
+            if self.guid is not None:
+                self.details["guid"] = self.guid
+            elif self.waypoint is not None:
+                self.details["waypoint"] = self.waypoint
             return self.details
 
         self.details["disabled"] = 0
