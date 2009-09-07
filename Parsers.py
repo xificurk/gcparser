@@ -121,7 +121,6 @@ class Cache(BaseParser):
         match = re.search("<span id=['\"]ErrorText['\"][^>]*><p>Sorry, the owner of this listing has made it viewable to subscribers only", self.data, re.I)
         if match:
             self.log.info("Subscribers only cache at '%s'." % self.url)
-            self.details = {}
             return self.details
 
         self.details["disabled"] = 0
