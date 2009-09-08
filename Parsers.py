@@ -149,7 +149,7 @@ class Cache(BaseParser):
 
         match = re.search("<span id=['\"]CacheName['\"]>([^<]+)</span>", self.data, re.I)
         if match:
-            self.details["name"] = self.unescape(match.group(1))
+            self.details["name"] = self.unescape(match.group(1)).strip()
             self.log.log(5, "name = %s" % self.details["name"])
         else:
             self.details["name"] = ""
@@ -165,10 +165,10 @@ class Cache(BaseParser):
 
         match = re.search("<span id=['\"]CacheOwner['\"]>([^<]+)<br />Size: ([^<]+)<br />by <a href=['\"]http://www.geocaching.com/profile/\?guid=([a-z0-9-]+)&wid=([a-z0-9-]+)[^'\"]*['\"]>([^<]+)</a></span>", self.data, re.I)
         if match:
-            self.details["type"] = self.unescape(match.group(1))
-            self.details["size"] = self.unescape(match.group(2))
+            self.details["type"] = self.unescape(match.group(1)).strip()
+            self.details["size"] = self.unescape(match.group(2)).strip()
             self.details["guid"] = self.unescape(match.group(4))
-            self.details["owner"] = self.unescape(match.group(5))
+            self.details["owner"] = self.unescape(match.group(5)).strip()
             self.details["owner_id"] = self.unescape(match.group(3))
             self.log.log(5, "guid = %s" % self.details["guid"])
             self.log.log(5, "type = %s" % self.details["type"])
@@ -217,9 +217,9 @@ class Cache(BaseParser):
         self.details["province"] = ""
         match = re.search("<span id=['\"]Location['\"]>In (([^,<]+), )?([^<]+)</span>", self.data, re.I)
         if match:
-            self.details["country"] = self.unescape(match.group(3))
+            self.details["country"] = self.unescape(match.group(3)).strip()
             if match.group(2):
-                self.details["province"] = self.unescape(match.group(2))
+                self.details["province"] = self.unescape(match.group(2)).strip()
                 self.log.log(5, "province = %s" % self.details["province"])
             self.log.log(5, "country = %s" % self.details["country"])
         else:
@@ -242,7 +242,7 @@ class Cache(BaseParser):
 
         match = re.search("<span id=['\"]Hints['\"][^>]*>(.*)</span>", self.data, re.I)
         if match:
-            self.details["hint"] = self.unescape(match.group(1).replace("<br>", "\n"))
+            self.details["hint"] = self.unescape(match.group(1).replace("<br>", "\n")).strip()
             self.log.log(5, "hint = %s..." % self.details["hint"].replace("\n"," ")[0:50])
         else:
             self.details["hint"] = ""
