@@ -166,22 +166,27 @@ class Cache(BaseParser):
         match = re.search("<span id=['\"]CacheOwner['\"]>([^<]+)<br />Size: ([^<]+)<br />by <a href=['\"]http://www.geocaching.com/profile/\?guid=([a-z0-9-]+)&wid=([a-z0-9-]+)[^'\"]*['\"]>([^<]+)</a></span>", self.data, re.I)
         if match:
             self.details["type"] = self.unescape(match.group(1)).strip()
-            self.details["size"] = self.unescape(match.group(2)).strip()
             self.details["guid"] = self.unescape(match.group(4))
             self.details["owner"] = self.unescape(match.group(5)).strip()
             self.details["owner_id"] = self.unescape(match.group(3))
             self.log.log(5, "guid = %s" % self.details["guid"])
             self.log.log(5, "type = %s" % self.details["type"])
-            self.log.log(5, "size = %s" % self.details["size"])
             self.log.log(5, "owner = %s" % self.details["owner"])
             self.log.log(5, "owner_id = %s" % self.details["owner_id"])
         else:
             self.details["type"] = ""
-            self.details["size"] = ""
             self.details["guid"] = ""
             self.details["owner"] = ""
             self.details["owner_id"] = ""
-            self.log.error("Type, size, guid, owner, owner_id not found.")
+            self.log.error("Type, guid, owner, owner_id not found.")
+
+        match = re.search("<img[^>]*src=['\"][^'\"]*/icons/container/[^'\"]*['\"][^>]*alt=['\"]Size: ([^'\"]+)['\"][^>]*>", self.data, re.I)
+        if match:
+            self.details["size"] = self.unescape(match.group(1)).strip()
+            self.log.log(5, "size = %s" % self.details["size"])
+        else:
+            self.details["size"] = ""
+            self.log.error("Size not found.")
 
         match = re.search("<span id=['\"]Difficulty['\"]><img src=['\"]http://www.geocaching.com/images/stars/[^\"']*['\"] alt=['\"]([0-9.]+) out of 5['\"]", self.data, re.I)
         if match:
