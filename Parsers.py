@@ -46,6 +46,7 @@ class BaseParser(object):
                     break
         return logged
 
+
     def cleanHTML(self, text):
         """Cleans text from HTML markup and unescapes entities"""
         text = text.replace("\r", " ")
@@ -371,6 +372,8 @@ class MyFinds(BaseParser):
 
         return self.count
 
+
+
 class EditProfile(BaseParser):
     def __init__(self, GCparser, profileData):
         BaseParser.__init__(self, GCparser)
@@ -385,6 +388,7 @@ class EditProfile(BaseParser):
         if not self.checkLogin():
             self.GCparser.auth.login()
             self.getForm()
+
 
     def save(self):
         """Saves data in user's profile"""

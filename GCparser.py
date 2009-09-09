@@ -37,13 +37,16 @@ class GCparser(object):
         self.registerParser("cache", Parsers.Cache)
         self.registerParser("editProfile", Parsers.EditProfile)
 
+
     def die(self):
         """Unrecoverable error, terminate application"""
         sys.exit()
 
+
     def registerParser(self, name, handler):
         """Register custom parser object"""
         self.parsers[name] = handler
+
 
     def parse(self, name, *args, **kwargs):
         """Call parser of the name"""
@@ -64,6 +67,7 @@ class Fetcher(object):
 
         self.lastFetch  = 0
         self.fetchCount = 0
+
 
     def getRandomUA(self):
         """Generate random UA string - masking as Firefox 3.0.x"""
@@ -104,6 +108,7 @@ class Fetcher(object):
         time.sleep(max(0,self.lastFetch+sleeptime-time.time()))
         self.fetchCount = self.fetchCount+1
         self.lastFetch  = time.time()
+
 
     def fetch(self, url, authenticate = False, data = None):
         """Fetch page"""
