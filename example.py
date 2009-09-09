@@ -21,3 +21,6 @@ print()
 details = gcp.parse("cache", guid="ed5b20b7-fdca-4e59-b518-3412154d49d0").getDetails()
 print("Cache:")
 print(details)
+
+# Let's update our profile
+gcp.parse("editProfile", "Pyggs profile update test.").save()

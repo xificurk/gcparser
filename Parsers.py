@@ -370,3 +370,33 @@ class MyFinds(BaseParser):
             self.count = 0
 
         return self.count
+
+class EditProfile(BaseParser):
+    def __init__(self, GCparser, profileData):
+        BaseParser.__init__(self, GCparser)
+        self.log = logging.getLogger("GCparser.ProfileEdit")
+        self.profileData = profileData
+
+
+    def getForm(self):
+        """Prepare form for updating profile"""
+        profile = self.GCparser.fetch.fetch("http://www.geocaching.com/account/editprofiledetails.aspx", authenticate=True)
+        self.read(profile)
+        if not self.checkLogin():
+            self.GCparser.auth.login()
+            self.getForm()
+
+    def save(self):
+        """Saves data in user's profile"""
+        self.getForm()
+
+        data = {}
+        for line in self.data.splitlines():
+            match = re.search('<input type="hidden" name="([^"]+)"[^>]+value="([^"]+)"', line)
+            if match:
+                data[match.group(1)] = match.group(2)
+        data["ctl00$ContentBody$uxProfileDetails"] = self.profileData
+        data["ctl00$ContentBody$uxSave"] = "Save Changes"
+
+        profile = self.GCparser.fetch.fetch("http://www.geocaching.com/account/editprofiledetails.aspx", data = data, authenticate = True)
+        self.read(profile)

@@ -35,6 +35,7 @@ class GCparser(object):
         # Register standard distribution parsers
         self.registerParser("myFinds", Parsers.MyFinds)
         self.registerParser("cache", Parsers.Cache)
+        self.registerParser("editProfile", Parsers.EditProfile)
 
     def die(self):
         """Unrecoverable error, terminate application"""
@@ -234,7 +235,7 @@ class Authenticator(object):
 
         line = webpage.readline()
         while line:
-            match = re.search('<input type="hidden" name="([^"]+)"[^>]+value="([^"]+)"', line.decode('utf-8'))
+            match = re.search('<input type="hidden" name="([^"]+)"[^>]+value="([^"]+)"', line.decode("utf-8"))
             if match:
                 data[match.group(1)] = match.group(2)
             line = webpage.readline()
