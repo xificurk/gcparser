@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # Import GCparser
-from GCparser import GCparser
+from gcparser import GCparser
 
 # Create GCparser class, you can also pass the third dataDir argument, then
 #   GCparser will use that directory to store login cookies, and reuse them,
