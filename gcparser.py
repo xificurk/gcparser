@@ -611,7 +611,7 @@ class MyFindsParser(BaseParser):
                     if "f_date" not in cache:
                         match = re.search("<td[^>]*>([0-9]+)/([0-9]+)/([0-9]+)</td>", line, re.I)
                         if match is not None:
-                            cache["f_date"] = "{0:4d}-{0:2d}-{0:2d}".format(int(match.group(3)), int(match.group(1)), int(match.group(2)))
+                            cache["f_date"] = "{0:4d}-{1:2d}-{2:2d}".format(int(match.group(3)), int(match.group(1)), int(match.group(2)))
                             self.log.log(5, "f_date = {0}".format(cache["f_date"]))
 
                     if "guid" not in cache:
