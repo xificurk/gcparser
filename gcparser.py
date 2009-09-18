@@ -79,7 +79,7 @@ class Fetcher(object):
         self.fetchCount = 0
 
 
-    def fetch(self, url, authenticate=False, data=None):
+    def fetch(self, url, authenticate=False, data=None, check=True):
         """Fetch page"""
         if authenticate:
             cookies = self.getCookies()
@@ -87,10 +87,12 @@ class Fetcher(object):
         else:
             opener = urllib.request.build_opener()
 
-        opener.addheader("User-agent", self.getUserAgent())
-        opener.addheader("Accept", "text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8")
-        opener.addheader("Accept-Language", "en-us,en;q=0.5")
-        opener.addheader("Accept-Charset", "utf-8,*;q=0.5")
+        headers = []
+        headers.append(("User-agent", self.getUserAgent()))
+        headers.append(("Accept", "text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8"))
+        headers.append(("Accept-Language", "en-us,en;q=0.5"))
+        headers.append(("Accept-Charset", "utf-8,*;q=0.5"))
+        opener.addheaders = headers
 
         self.wait()
         self.log.debug("Fetching page '{0}'.".format(url))
@@ -104,7 +106,8 @@ class Fetcher(object):
             self.saveCookies()
 
         web = web.read().decode("utf-8")
-        if authenticate and not self.checkLogin(web):
+        if authenticate and check and not self.checkLogin(web):
+            self.log.debug("We're not actually logged in, refreshing login and redownloading page.")
             self.login()
             self.fetch(url, authenticate, data)
 
@@ -187,6 +190,7 @@ class Fetcher(object):
             if userFile is not None:
                 UAFile = userFile + ".ua"
                 with open(UAFile, "w", encoding="utf-8") as fp:
+                    self.log.debug("Saving user agent.")
                     fp.write(self.userAgent)
 
 
@@ -252,7 +256,7 @@ class Fetcher(object):
             self.log.critical("Cannot log in - no credentials available.")
             raise CredentialsException
 
-        webpage = self.fetch("http://www.geocaching.com/", authenticate=True)
+        webpage = self.fetch("http://www.geocaching.com/", authenticate=True, check=False)
 
         data = {}
         data["ctl00$MiniProfile$loginUsername"] = self.username
@@ -260,14 +264,12 @@ class Fetcher(object):
         data["ctl00$MiniProfile$LoginBtn"] = "Go"
         data["ctl00$MiniProfile$loginRemember"] = "on"
 
-        line = webpage.readline()
-        while line:
-            match = re.search('<input type="hidden" name="([^"]+)"[^>]+value="([^"]+)"', line.decode("utf-8"))
+        for line in webpage.splitlines():
+            match = re.search('<input type="hidden" name="([^"]+)"[^>]+value="([^"]+)"', line)
             if match:
                 data[match.group(1)] = match.group(2)
-            line = webpage.readline()
 
-        webpage = self.fetch("http://www.geocaching.com/Default.aspx", data = data, authenticate = True)
+        webpage = self.fetch("http://www.geocaching.com/Default.aspx", data=data, authenticate=True, check=False)
 
         logged = False
         for cookie in self.cookies:
@@ -279,10 +281,11 @@ class Fetcher(object):
 
     def checkLogin(self, data):
         """Checks the data for not logged in error"""
+        self.log.debug("Checking if we're really logged in...")
         logged = True
         if data is not None:
             for line in data.splitlines():
-                if line.find("You are not Logged in.") != -1:
+                if line.find("You are not logged in.") != -1:
                     logged = False
                     break
         return logged
