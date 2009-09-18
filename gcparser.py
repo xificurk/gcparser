@@ -51,7 +51,7 @@ class GCparser(object):
 
     def parse(self, name, *args, **kwargs):
         """Call parser of the name"""
-        return self.parsers[name](self, *args, **kwargs)
+        return self.parsers[name](self.fetcher, *args, **kwargs)
 
 
 
@@ -142,6 +142,11 @@ class Fetcher(object):
 
         if authenticate:
             self.saveCookies()
+
+        web = web.read().decode("utf-8")
+        if authenticate and not self.checkLogin(web):
+            self.login()
+            self.fetch(url, authenticate, data)
 
         return web
 
@@ -250,6 +255,17 @@ class Fetcher(object):
         return logged
 
 
+    def checkLogin(self, data):
+        """Checks the data for not logged in error"""
+        logged = True
+        if data is not None:
+            for line in data.splitlines():
+                if line.find("You are not Logged in.") != -1:
+                    logged = False
+                    break
+        return logged
+
+
 
 """
     PARSERS
@@ -262,30 +278,15 @@ class BaseParser(object):
     __rot13Trans = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", "NOPQRSTUVWXYZABCDEFGHIJKLMnopqrstuvwxyzabcdefghijklm")
     __unescape = HTMLParser().unescape
 
-    def __init__(self, GCparser):
-        self.GCparser = GCparser
+    def __init__(self, fetcher):
+        self.fetcher = fetcher
         self.data = None
 
 
     def _load(self, url, authenticate=False, data=None):
         """Loads data from webpage"""
         if self.data is None:
-            web = self.GCparser.fetcher.fetch(url, authenticate=authenticate, data=data)
-            self.data = web.read().decode("utf-8")
-            if authenticate and not self.checkLogin():
-                self.GCparser.fetcher.login()
-                self._load(self, url, authenticate, data)
-
-
-    def checkLogin(self):
-        """Checks the line for not logged in error"""
-        logged = True
-        if self.data is not None:
-            for line in self.data.splitlines():
-                if line.find("You are not Logged in.") != -1:
-                    logged = False
-                    break
-        return logged
+            self.data = self.fetcher.fetch(url, authenticate=authenticate, data=data)
 
 
     def rot13(self, text):
@@ -328,8 +329,8 @@ class BaseParser(object):
 
 
 class CacheParser(BaseParser):
-    def __init__(self, GCparser, guid=None, waypoint=None, logs=False):
-        BaseParser.__init__(self, GCparser)
+    def __init__(self, fetcher, guid=None, waypoint=None, logs=False):
+        BaseParser.__init__(self, fetcher)
         self.log = logging.getLogger("GCparser.CacheParser")
         self.details = None
         self.waypoint = waypoint
@@ -505,7 +506,7 @@ class CacheParser(BaseParser):
 
         match = re.search("<b>Attributes</b><br/><table.*?</table>([^<]+)", self.data, re.I)
         if match is not None:
-            self.details["attributes"] = match.group(1).strip()
+            self.details["attributes"] = self.unescape(match.group(1)).strip()
             self.log.log(5, "attributes = {0}".format(self.details["attributes"]))
         else:
             self.details["attributes"] = ""
@@ -516,7 +517,7 @@ class CacheParser(BaseParser):
             for part in match.group(1).split("</tr>"):
                 match = re.search("<a href=['\"]http://www.geocaching.com/track/details.aspx\?guid=([a-z0-9-]+)['\"]>([^<]+)</a>", part, re.I)
                 if match is not None:
-                    self.details["inventory"][match.group(1)] = self.unescape(match.group(2).strip())
+                    self.details["inventory"][match.group(1)] = self.unescape(match.group(2)).strip()
             self.log.log(5, "inventory = {0}".format(self.details["inventory"]))
 
         self.details["visits"] = {}
@@ -525,7 +526,7 @@ class CacheParser(BaseParser):
             for part in match.group(1).split("</td><td>"):
                 match = re.search("<img[^>]*alt=\"([^\"]+)\"[^>]*/>([0-9]+)", part, re.I)
                 if match is not None:
-                    self.details["visits"][match.group(1)] = int(match.group(2))
+                    self.details["visits"][self.unescape(match.group(1)).strip()] = int(match.group(2))
             self.log.log(5, "visits = {0}".format(self.details["visits"]))
 
         return self.details
@@ -533,8 +534,8 @@ class CacheParser(BaseParser):
 
 
 class MyFindsParser(BaseParser):
-    def __init__(self, GCparser):
-        BaseParser.__init__(self, GCparser)
+    def __init__(self, fetcher):
+        BaseParser.__init__(self, fetcher)
         self.log = logging.getLogger("GCparser.MyFindsParser")
         self.cacheList = None
         self.count = None
@@ -582,7 +583,7 @@ class MyFindsParser(BaseParser):
                         match = re.search("<td[^>]*><a href=['\"]http://www.geocaching.com/seek/cache_details.aspx\?guid=([a-z0-9-]+)['\"][^>]*>(<font color=\"red\">)?(<strike>)?([^<]+)(</strike>)?[^<]*(</font>)?[^<]*</a>[^<]*</td>", line, re.I)
                         if match is not None:
                             cache["guid"] = match.group(1)
-                            cache["name"] = self.unescape(match.group(4).strip())
+                            cache["name"] = self.unescape(match.group(4)).strip()
                             if match.group(3):
                                 cache["disabled"] = 1
                             else:
@@ -621,8 +622,8 @@ class MyFindsParser(BaseParser):
 
 
 class EditProfile(BaseParser):
-    def __init__(self, GCparser, profileData):
-        BaseParser.__init__(self, GCparser)
+    def __init__(self, fetcher, profileData):
+        BaseParser.__init__(self, fetcher)
         self.log = logging.getLogger("GCparser.ProfileEdit")
         self.profileData = profileData
 
