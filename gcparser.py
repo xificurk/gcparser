@@ -73,18 +73,124 @@ class Fetcher(object):
             self.dataDir = None
 
         self.cookies = None
-
-        self.headers = []
-        self.headers.append(("User-agent", self.getRandomUA()))
-        self.headers.append(("Accept", "text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8"))
-        self.headers.append(("Accept-Language", "en-us,en;q=0.5"))
-        self.headers.append(("Accept-Charset", "utf-8,*;q=0.5"))
+        self.userAgent = None
 
         self.lastFetch = 0
         self.fetchCount = 0
 
 
-    def getRandomUA(self):
+    def fetch(self, url, authenticate=False, data=None):
+        """Fetch page"""
+        if authenticate:
+            cookies = self.getCookies()
+            opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookies))
+        else:
+            opener = urllib.request.build_opener()
+
+        opener.addheader("User-agent", self.getUserAgent())
+        opener.addheader("Accept", "text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8")
+        opener.addheader("Accept-Language", "en-us,en;q=0.5")
+        opener.addheader("Accept-Charset", "utf-8,*;q=0.5")
+
+        self.wait()
+        self.log.debug("Fetching page '{0}'.".format(url))
+        if data is not None:
+            web = opener.open(url, urllib.parse.urlencode(data))
+        else:
+            web = opener.open(url)
+
+        self.saveUserAgent()
+        if authenticate:
+            self.saveCookies()
+
+        web = web.read().decode("utf-8")
+        if authenticate and not self.checkLogin(web):
+            self.login()
+            self.fetch(url, authenticate, data)
+
+        return web
+
+
+    def getCookies(self):
+        """Get current cookies, load from file, or create"""
+        if self.cookies is not None:
+            return self.cookies
+
+        userFile = self.userFileName()
+        if userFile is None:
+            self.log.debug("Cannot load cookies - invalid filename.")
+            self.cookies = CJ.CookieJar()
+            self.login()
+        else:
+            cookieFile = userFile + ".cookie"
+            if os.path.isfile(cookieFile):
+                self.log.debug("Re-using stored cookies.")
+                self.cookies = CJ.LWPCookieJar(cookieFile)
+                self.cookies.load(ignore_discard=True)
+                logged = False
+                for cookie in self.cookies:
+                    if cookie.name == "userid":
+                        logged = True
+                        break
+                if not logged:
+                    self.login()
+            else:
+                self.log.debug("No stored cookies, creating new.")
+                self.cookies = CJ.LWPCookieJar(cookieFile)
+                self.login()
+
+        return self.cookies
+
+
+    def saveCookies(self):
+        """Try to save cookies, if possible"""
+        if isinstance(self.cookies, CJ.LWPCookieJar):
+            self.log.debug("Saving cookies.")
+            self.cookies.save(ignore_discard=True, ignore_expires=True)
+
+
+    def userFileName(self):
+        """Returns filename to store user's data"""
+        if self.username is None or self.dataDir is None:
+            return None
+
+        hash = md5(self.username.encode("utf-8")).hexdigest()
+        name = ''.join((c for c in unicodedata.normalize('NFD', self.username) if unicodedata.category(c) != 'Mn'))
+        name = re.sub("[^a-zA-Z0-9._-]+", "", name, flags=re.A)
+        name = name + "_" + hash
+        return os.path.join(self.dataDir, name)
+
+
+    def getUserAgent(self):
+        """return current UserAgent, or load from file, or generate random one"""
+        if self.userAgent is not None:
+            return self.userAgent
+
+        userFile = self.userFileName()
+        if userFile is None:
+            self.userAgent = self.randomUserAgent()
+        else:
+            UAFile = userFile + ".ua"
+            if os.path.isfile(UAFile):
+                with open(UAFile, "r", encoding="utf-8") as fp:
+                    self.userAgent = fp.read()
+            else:
+                self.userAgent = self.randomUserAgent()
+
+        return self.userAgent
+
+
+    def saveUserAgent(self):
+        """Try to save user agent, if possible"""
+        if self.userAgent is not None:
+            userFile = self.userFileName()
+            if userFile is not None:
+                UAFile = userFile + ".ua"
+                with open(UAFile, "w", encoding="utf-8") as fp:
+                    fp.write(self.userAgent)
+
+
+    def randomUserAgent(self):
         """Generate random UA string - masking as Firefox 3.0.x"""
         system = random.randint(1,5)
         if system <= 1:
@@ -121,90 +227,6 @@ class Fetcher(object):
         time.sleep(max(0, self.lastFetch + sleepTime - time.time()))
         self.fetchCount = self.fetchCount + 1
         self.lastFetch = time.time()
-
-
-    def fetch(self, url, authenticate=False, data=None):
-        """Fetch page"""
-        if authenticate:
-            cookies = self.getCookies()
-            opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookies))
-        else:
-            opener = urllib.request.build_opener()
-
-        opener.addheaders = self.headers
-
-        self.wait()
-        self.log.debug("Fetching page '{0}'.".format(url))
-        if data is not None:
-            web = opener.open(url, urllib.parse.urlencode(data))
-        else:
-            web = opener.open(url)
-
-        if authenticate:
-            self.saveCookies()
-
-        web = web.read().decode("utf-8")
-        if authenticate and not self.checkLogin(web):
-            self.login()
-            self.fetch(url, authenticate, data)
-
-        return web
-
-
-    def cookieFileName(self):
-        """Returns filename to store cookies"""
-        if self.username is None or self.dataDir is None:
-            return None
-
-        hash = md5(self.username.encode("utf-8")).hexdigest()
-        name = ''.join((c for c in unicodedata.normalize('NFD', self.username) if unicodedata.category(c) != 'Mn'))
-        name = re.sub("[^a-zA-Z0-9._-]+", "", name, flags=re.A)
-        name = name + "_" + hash + ".cookie"
-        return os.path.join(self.dataDir, name)
-
-
-    def loadCookies(self):
-        """Try to load cookies, if possible"""
-        cookieFile = self.cookieFileName()
-        if cookieFile is None:
-            self.log.debug("Cannot load cookies - invalid filename.")
-            self.cookies = CJ.CookieJar()
-            return False
-        elif os.path.isfile(cookieFile):
-            self.log.debug("Re-using stored cookies.")
-            self.cookies = CJ.LWPCookieJar(cookieFile)
-            self.cookies.load(ignore_discard=True)
-            logged = False
-            for cookie in self.cookies:
-                if cookie.name == "userid":
-                    logged = True
-                    break
-            return logged
-        else:
-            self.log.debug("No stored cookies, creating new.")
-            self.cookies = CJ.LWPCookieJar(cookieFile)
-            return False
-
-
-    def saveCookies(self):
-        """Try to save cookies, if possible"""
-        if isinstance(self.cookies, CJ.LWPCookieJar):
-            self.log.debug("Saving cookies.")
-            self.cookies.save(ignore_discard=True, ignore_expires=True)
-
-
-    def getCookies(self):
-        """Returns login cookiejar"""
-
-        # Already have cookies, let's return that
-        if self.cookies is not None:
-            return self.cookies
-
-        # Let's try to load stored cookies from file
-        if not self.loadCookies():
-            self.login()
-
-        return self.cookies
 
 
     def login(self):
