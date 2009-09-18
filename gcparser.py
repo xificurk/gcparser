@@ -79,6 +79,7 @@ class Fetcher(object):
         self.cookies = None
         self.userAgent = None
 
+        self.firstFetch = 0
         self.lastFetch = 0
         self.fetchCount = 0
 
@@ -211,25 +212,30 @@ class Fetcher(object):
             system = "Windows"
             systemVersion = ["Windows NT 5.1", "Windows NT 6.0", "Windows NT 6.1"]
 
-        systemVersion = systemVersion[random.randint(0,len(systemVersion)-1)]
-        version = random.randint(1,13)
-        date = "200907{0:02d}{1:02d}".format(random.randint(1, 31), random.randint(1,23))
+        systemVersion = systemVersion[random.randint(0, len(systemVersion) - 1)]
+        version = random.randint(1, 13)
+        date = "200907{0:02d}{1:02d}".format(random.randint(1, 31), random.randint(1, 23))
 
         return "Mozilla/5.0 ({0}; U; {1}; en-US; rv:1.9.0.{2:d}) Gecko/{3} Firefox/3.0.{2:d}".format(system, systemVersion, version, date)
 
 
     def wait(self):
         """Waits for random number of seconds to lessen the load on geocaching.com"""
-        # 60 fetches in first minute => 60/1min
-        if self.fetchCount < 60:
+        # no fetch for a long time => reset firstFetch value using desired average
+        self.firstFetch = max(time.time() - self.fetchCount*20, self.firstFetch)
+        # Desired average: fetch page every 20 seconds
+        count = self.fetchCount - int((time.time() - self.firstFetch)/20)
+
+        # sleep time 1s: 63/63s => overall 63/1min
+        if count < 60:
             sleepTime = 1
-        # another 240 fetches in 10 minutes => 300/11min
-        elif self.fetchCount < 300:
-            sleepTime = random.randint(1,4)
-        # another 300 fetches in 30 minutes => 600/41min
-        elif self.fetchCount < 600:
+        # sleep time 1-5s: 164/492s => overall 227/9min
+        elif count < 200:
+            sleepTime = random.randint(1,5)
+        # sleep time 2-10s: 428/2568s => overall 665/52min
+        elif count < 500:
             sleepTime = random.randint(2,10)
-        # next fetch every 10-20 seconds
+        # sleep time 10-20s
         else:
             sleepTime = random.randint(10,20)
         time.sleep(max(0, self.lastFetch + sleepTime - time.time()))
