@@ -20,10 +20,14 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 """
 
-import logging
+__version__ = "0.3"
+__all__ = ["GCparser", "Fetcher", "BaseParser", "CacheParser", "MyFindsParser", "EditProfile", "CredentialsException", "LoginException"]
+
+
 from hashlib import md5
 from html.parser import HTMLParser
 import http.cookiejar as CJ
+import logging
 import os
 import random
 import re
