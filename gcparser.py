@@ -27,27 +27,21 @@ import http.cookiejar as CJ
 import os
 import random
 import re
-import sys
 import time
+import unicodedata
 import urllib
 
 
 class GCparser(object):
-    def __init__(self, username = None, password = None, dataDir = "~/.geocaching/parser"):
+    def __init__(self, username=None, password=None, dataDir="~/.geocaching/parser"):
         self.log = logging.getLogger("GCparser")
 
-        self.auth    = Authenticator(self, username, password, dataDir)
-        self.fetch   = Fetcher(self)
+        self.fetcher = Fetcher(username, password, dataDir)
         self.parsers = {}
         # Register standard distribution parsers
-        self.registerParser("myFinds", Parsers.MyFinds)
-        self.registerParser("cache", Parsers.Cache)
-        self.registerParser("editProfile", Parsers.EditProfile)
-
-
-    def die(self):
-        """Unrecoverable error, terminate application"""
-        sys.exit()
+        self.registerParser("myFinds", MyFindsParser)
+        self.registerParser("cache", CacheParser)
+        self.registerParser("editProfile", EditProfile)
 
 
     def registerParser(self, name, handler):
@@ -62,89 +56,8 @@ class GCparser(object):
 
 
 class Fetcher(object):
-    def __init__(self, GCparser):
-        self.log  = logging.getLogger("GCparser.Fetch")
-        self.GCparser = GCparser
-
-        self.headers = []
-        self.headers.append(("User-agent", self.getRandomUA()))
-        self.headers.append(("Accept", "text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8"))
-        self.headers.append(("Accept-Language", "en-us,en;q=0.5"))
-        self.headers.append(("Accept-Charset", "utf-8,*;q=0.5"))
-
-        self.lastFetch  = 0
-        self.fetchCount = 0
-
-
-    def getRandomUA(self):
-        """Generate random UA string - masking as Firefox 3.0.x"""
-        system = random.randint(1,5)
-        if system <= 1:
-            system = "X11"
-            systemversion = ["Linux i686", "Linux x86_64"]
-        elif system <= 2:
-            system = "Macintosh"
-            systemversion = ["PPC Mac OS X 10.5"]
-        else:
-            system = "Windows"
-            systemversion = ["Windows NT 5.1", "Windows NT 6.0", "Windows NT 6.1"]
-
-        systemversion = systemversion[random.randint(0,len(systemversion)-1)]
-        version = random.randint(1,13)
-        date = "200907%02d%02d" % (random.randint(1, 31), random.randint(1,23))
-
-        ua = "Mozilla/5.0 (%s; U; %s; en-US; rv:1.9.0.%d) Gecko/%s Firefox/3.0.%d" % (system, systemversion, version, date, version)
-
-        return ua
-
-
-    def wait(self):
-        """Waits for random number of seconds to lessen the load on geocaching.com"""
-        # 60 fetches in first minute => 60/1min
-        if self.fetchCount < 60:
-            sleeptime = 1
-        # another 240 fetches in 10 minutes => 300/11min
-        elif self.fetchCount < 300:
-            sleeptime = random.randint(1,4)
-        # another 300 fetches in 30 minutes => 600/41min
-        elif self.fetchCount < 600:
-            sleeptime = random.randint(2,10)
-        # next fetch every 10-20 seconds
-        else:
-            sleeptime = random.randint(10,20)
-        time.sleep(max(0,self.lastFetch+sleeptime-time.time()))
-        self.fetchCount = self.fetchCount+1
-        self.lastFetch  = time.time()
-
-
-    def fetch(self, url, authenticate = False, data = None):
-        """Fetch page"""
-        if authenticate:
-            cookies = self.GCparser.auth.getCookies()
-            opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookies))
-        else:
-            opener = urllib.request.build_opener()
-
-        opener.addheaders = self.headers
-
-        self.wait()
-        self.log.debug("Fetching page '%s'." % url)
-        if data is not None:
-            web = opener.open(url, urllib.parse.urlencode(data))
-        else:
-            web = opener.open(url)
-
-        if authenticate:
-            self.GCparser.auth.saveCookies()
-
-        return web
-
-
-
-class Authenticator(object):
-    def __init__(self, GCparser, username = None, password = None, dataDir = "~/.geocaching/parser"):
-        self.log = logging.getLogger("GCparser.Auth")
-        self.GCparser = GCparser
+    def __init__(self, username=None, password=None, dataDir="~/.geocaching/parser"):
+        self.log = logging.getLogger("GCparser.Fetcher")
 
         self.username = username
         self.password = password
@@ -154,43 +67,123 @@ class Authenticator(object):
         dataDir = os.path.expanduser(dataDir)
         if os.path.isdir(dataDir):
             self.dataDir = dataDir
-            self.log.info("Setting data directory to '%s'." % dataDir)
+            self.log.info("Setting data directory to '{0}'.".format(dataDir))
         else:
-            self.log.warn("Data directory '%s' does not exist, saving cookies will be disabled." % dataDir)
+            self.log.warn("Data directory '{0}' does not exist, caching will be disabled.".format(dataDir))
             self.dataDir = None
 
         self.cookies = None
 
+        self.headers = []
+        self.headers.append(("User-agent", self.getRandomUA()))
+        self.headers.append(("Accept", "text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8"))
+        self.headers.append(("Accept-Language", "en-us,en;q=0.5"))
+        self.headers.append(("Accept-Charset", "utf-8,*;q=0.5"))
+
+        self.lastFetch = 0
+        self.fetchCount = 0
+
+
+    def getRandomUA(self):
+        """Generate random UA string - masking as Firefox 3.0.x"""
+        system = random.randint(1,5)
+        if system <= 1:
+            system = "X11"
+            systemVersion = ["Linux i686", "Linux x86_64"]
+        elif system <= 2:
+            system = "Macintosh"
+            systemVersion = ["PPC Mac OS X 10.5"]
+        else:
+            system = "Windows"
+            systemVersion = ["Windows NT 5.1", "Windows NT 6.0", "Windows NT 6.1"]
+
+        systemVersion = systemVersion[random.randint(0,len(systemVersion)-1)]
+        version = random.randint(1,13)
+        date = "200907{0:02d}{1:02d}".format(random.randint(1, 31), random.randint(1,23))
+
+        return "Mozilla/5.0 ({0}; U; {1}; en-US; rv:1.9.0.{2:d}) Gecko/{3} Firefox/3.0.{2:d}".format(system, systemVersion, version, date)
+
+
+    def wait(self):
+        """Waits for random number of seconds to lessen the load on geocaching.com"""
+        # 60 fetches in first minute => 60/1min
+        if self.fetchCount < 60:
+            sleepTime = 1
+        # another 240 fetches in 10 minutes => 300/11min
+        elif self.fetchCount < 300:
+            sleepTime = random.randint(1,4)
+        # another 300 fetches in 30 minutes => 600/41min
+        elif self.fetchCount < 600:
+            sleepTime = random.randint(2,10)
+        # next fetch every 10-20 seconds
+        else:
+            sleepTime = random.randint(10,20)
+        time.sleep(max(0, self.lastFetch + sleepTime - time.time()))
+        self.fetchCount = self.fetchCount + 1
+        self.lastFetch = time.time()
+
+
+    def fetch(self, url, authenticate=False, data=None):
+        """Fetch page"""
+        if authenticate:
+            cookies = self.getCookies()
+            opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookies))
+        else:
+            opener = urllib.request.build_opener()
+
+        opener.addheaders = self.headers
+
+        self.wait()
+        self.log.debug("Fetching page '{0}'.".format(url))
+        if data is not None:
+            web = opener.open(url, urllib.parse.urlencode(data))
+        else:
+            web = opener.open(url)
+
+        if authenticate:
+            self.saveCookies()
+
+        return web
+
 
     def cookieFileName(self):
         """Returns filename to store cookies"""
-        return "%s/%s.cookie" % (self.dataDir, md5(self.username.encode("utf-8")).hexdigest())
+        if self.username is None or self.dataDir is None:
+            return None
+
+        hash = md5(self.username.encode("utf-8")).hexdigest()
+        name = ''.join((c for c in unicodedata.normalize('NFD', self.username) if unicodedata.category(c) != 'Mn'))
+        name = re.sub("[^a-zA-Z0-9._-]+", "", name, flags=re.A)
+        name = name + "_" + hash + ".cookie"
+        return os.path.join(self.dataDir, name)
 
 
     def loadCookies(self):
         """Try to load cookies, if possible"""
-        if self.dataDir is None:
-            self.log.debug("Cannot load cookies - invalid data directory.")
+        cookieFile = self.cookieFileName()
+        if cookieFile is None:
+            self.log.debug("Cannot load cookies - invalid filename.")
             self.cookies = CJ.CookieJar()
             return False
-        elif os.path.exists(self.cookieFileName()):
+        elif os.path.isfile(cookieFile):
             self.log.debug("Re-using stored cookies.")
-            self.cookies = CJ.LWPCookieJar(self.cookieFileName())
+            self.cookies = CJ.LWPCookieJar(cookieFile)
             self.cookies.load(ignore_discard=True)
             logged = False
             for cookie in self.cookies:
                 if cookie.name == "userid":
                     logged = True
+                    break
             return logged
         else:
             self.log.debug("No stored cookies, creating new.")
-            self.cookies = CJ.LWPCookieJar(self.cookieFileName())
+            self.cookies = CJ.LWPCookieJar(cookieFile)
             return False
 
 
     def saveCookies(self):
         """Try to save cookies, if possible"""
-        if self.dataDir is not None:
+        if isinstance(self.cookies, CJ.LWPCookieJar):
             self.log.debug("Saving cookies.")
             self.cookies.save(ignore_discard=True, ignore_expires=True)
 
@@ -201,11 +194,6 @@ class Authenticator(object):
         # Already have cookies, let's return that
         if self.cookies is not None:
             return self.cookies
-
-        # Don't have username => cannot proceed
-        if self.username is None:
-            self.log.critical("Username not available.")
-            self.GCparser.die()
 
         # Let's try to load stored cookies from file
         if not self.loadCookies():
@@ -223,7 +211,7 @@ class Authenticator(object):
 
         if not logged:
             self.log.critical("Login error.")
-            self.GCparser.die()
+            raise LoginException
 
         self.log.debug("Logged in.")
         self.saveCookies()
@@ -235,14 +223,14 @@ class Authenticator(object):
 
         if self.username is None or self.password is None:
             self.log.critical("Cannot log in - no credentials available.")
-            self.GCparser.die()
+            raise CredentialsException
 
-        webpage = self.GCparser.fetch.fetch("http://www.geocaching.com/", authenticate = True)
+        webpage = self.fetch("http://www.geocaching.com/", authenticate=True)
 
         data = {}
         data["ctl00$MiniProfile$loginUsername"] = self.username
         data["ctl00$MiniProfile$loginPassword"] = self.password
-        data["ctl00$MiniProfile$LoginBtn"]      = "Go"
+        data["ctl00$MiniProfile$LoginBtn"] = "Go"
         data["ctl00$MiniProfile$loginRemember"] = "on"
 
         line = webpage.readline()
@@ -252,7 +240,7 @@ class Authenticator(object):
                 data[match.group(1)] = match.group(2)
             line = webpage.readline()
 
-        webpage = self.GCparser.fetch.fetch("http://www.geocaching.com/Default.aspx", data = data, authenticate = True)
+        webpage = self.fetch("http://www.geocaching.com/Default.aspx", data = data, authenticate = True)
 
         logged = False
         for cookie in self.cookies:
@@ -271,14 +259,23 @@ logging.addLevelName(5, "PARSER")
 
 
 class BaseParser(object):
+    __rot13Trans = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", "NOPQRSTUVWXYZABCDEFGHIJKLMnopqrstuvwxyzabcdefghijklm")
+    __unescape = HTMLParser().unescape
+
     def __init__(self, GCparser):
         self.GCparser = GCparser
-        self.unescape = HTMLParser().unescape
-        self.data     = None
+        self.data = None
 
-    def read(self, web):
-        """Parses web resource"""
-        self.data = web.read().decode("utf-8")
+
+    def _load(self, url, authenticate=False, data=None):
+        """Loads data from webpage"""
+        if self.data is None:
+            web = self.GCparser.fetcher.fetch(url, authenticate=authenticate, data=data)
+            self.data = web.read().decode("utf-8")
+            if authenticate and not self.checkLogin():
+                self.GCparser.fetcher.login()
+                self._load(self, url, authenticate, data)
+
 
     def checkLogin(self):
         """Checks the line for not logged in error"""
@@ -289,6 +286,16 @@ class BaseParser(object):
                     logged = False
                     break
         return logged
+
+
+    def rot13(self, text):
+        """Perform rot13"""
+        return text.translate(self.__rot13Trans)
+
+
+    def unescape(self, text):
+        """Unescape HTML entities"""
+        return self.__unescape(text)
 
 
     def cleanHTML(self, text):
@@ -320,23 +327,23 @@ class BaseParser(object):
 
 
 
-class Cache(BaseParser):
-    def __init__(self, GCparser, guid = None, waypoint = None, logs = False):
+class CacheParser(BaseParser):
+    def __init__(self, GCparser, guid=None, waypoint=None, logs=False):
         BaseParser.__init__(self, GCparser)
-        self.log = logging.getLogger("GCparser.Cache")
+        self.log = logging.getLogger("GCparser.CacheParser")
         self.details = None
         self.waypoint = waypoint
         self.guid = guid
 
         if guid is None and waypoint is None:
-            self.log.critical("No guid or waypoint given - don't know what to parse.")
-            self.GCparser.die()
+            self.log.error("No guid or waypoint given - don't know what to parse.")
+            raise ValueError
 
         self.url = "http://www.geocaching.com/seek/cache_details.aspx?pf=y&numlogs=&decrypt=y"
         if guid is not None:
-            self.url = self.url + "&guid=%s" % guid
+            self.url = self.url + "&guid=" + guid
         else:
-            self.url = self.url + "&wp=%s" % waypoint
+            self.url = self.url + "&wp=" + waypoint
 
         if logs:
             self.url = self.url + "&log=y"
@@ -348,12 +355,7 @@ class Cache(BaseParser):
 
     def load(self):
         """Loads data from webpage"""
-        if self.data is None:
-            web = self.GCparser.fetch.fetch(self.url, authenticate=True)
-            self.read(web)
-            if not self.checkLogin():
-                self.GCparser.auth.login()
-                self.load()
+        self._load(self.url, True)
 
 
     def getDetails(self):
@@ -366,8 +368,8 @@ class Cache(BaseParser):
         self.details = {}
 
         match = re.search("<span id=['\"]ErrorText['\"][^>]*><p>Sorry, the owner of this listing has made it viewable to subscribers only", self.data, re.I)
-        if match:
-            self.log.info("Subscribers only cache at '%s'." % self.url)
+        if match is not None:
+            self.log.info("Subscribers only cache at '{0}'.".format(self.url))
             if self.guid is not None:
                 self.details["guid"] = self.guid
             elif self.waypoint is not None:
@@ -377,47 +379,47 @@ class Cache(BaseParser):
         self.details["disabled"] = 0
         self.details["archived"] = 0
         match = re.search("<span id=['\"]ErrorText['\"][^>]*><strong>Cache Issues:</strong><ul><font[^>]*><li>This cache (has been archived|is temporarily unavailable)[^<]*</li>", self.data, re.I)
-        if match:
+        if match is not None:
             if match.group(1) == "has been archived":
                 self.details["archived"] = 1
-                self.log.log(5, "archived = %d" % self.details["archived"])
+                self.log.log(5, "archived = {0}".format(self.details["archived"]))
             self.details["disabled"] = 1
-            self.log.log(5, "disabled = %d" % self.details["disabled"])
+            self.log.log(5, "disabled = {0}".format(self.details["disabled"]))
 
         match = re.search("GC[A-Z0-9]+", self.data)
-        if match:
+        if match is not None:
             self.details["waypoint"] = match.group(0)
-            self.log.log(5, "waypoint = %s" % self.details["waypoint"])
+            self.log.log(5, "waypoint = {0}".format(self.details["waypoint"]))
         else:
             self.details["waypoint"] = ""
             self.log.error("Waypoint not found.")
 
         match = re.search("<span id=['\"]CacheName['\"]>([^<]+)</span>", self.data, re.I)
-        if match:
+        if match is not None:
             self.details["name"] = self.unescape(match.group(1)).strip()
-            self.log.log(5, "name = %s" % self.details["name"])
+            self.log.log(5, "name = {0}".format(self.details["name"]))
         else:
             self.details["name"] = ""
             self.log.error("Name not found.")
 
         match = re.search("<span id=['\"]DateHidden['\"]>([0-9]+)/([0-9]+)/([0-9]+)</span>", self.data, re.I)
-        if match:
-            self.details["hidden"] = "%4d-%02d-%02d" % (int(match.group(3)), int(match.group(1)), int(match.group(2)))
-            self.log.log(5, "hidden = %s" % self.details["hidden"])
+        if match is not None:
+            self.details["hidden"] = "{0:4d}-{1:02d}-{2:02d}".format(int(match.group(3)), int(match.group(1)), int(match.group(2)))
+            self.log.log(5, "hidden = {0}".format(self.details["hidden"]))
         else:
             self.details["hidden"] = "0000-00-00"
             self.log.error("Hidden date not found.")
 
         match = re.search("<span id=['\"]CacheOwner['\"]>([^<]+)<br />Size: ([^<]+)<br />by <a href=['\"]http://www.geocaching.com/profile/\?guid=([a-z0-9-]+)&wid=([a-z0-9-]+)[^'\"]*['\"]>([^<]+)</a></span>", self.data, re.I)
-        if match:
+        if match is not None:
             self.details["type"] = self.unescape(match.group(1)).strip()
-            self.details["guid"] = self.unescape(match.group(4))
+            self.details["guid"] = match.group(4)
             self.details["owner"] = self.unescape(match.group(5)).strip()
-            self.details["owner_id"] = self.unescape(match.group(3))
-            self.log.log(5, "guid = %s" % self.details["guid"])
-            self.log.log(5, "type = %s" % self.details["type"])
-            self.log.log(5, "owner = %s" % self.details["owner"])
-            self.log.log(5, "owner_id = %s" % self.details["owner_id"])
+            self.details["owner_id"] = match.group(3)
+            self.log.log(5, "guid = {0}".format(self.details["guid"]))
+            self.log.log(5, "type = {0}".format(self.details["type"]))
+            self.log.log(5, "owner = {0}".format(self.details["owner"]))
+            self.log.log(5, "owner_id = {0}".format(self.details["owner_id"]))
         else:
             self.details["type"] = ""
             self.details["guid"] = ""
@@ -426,39 +428,39 @@ class Cache(BaseParser):
             self.log.error("Type, guid, owner, owner_id not found.")
 
         match = re.search("<img[^>]*src=['\"][^'\"]*/icons/container/[^'\"]*['\"][^>]*alt=['\"]Size: ([^'\"]+)['\"][^>]*>", self.data, re.I)
-        if match:
+        if match is not None:
             self.details["size"] = self.unescape(match.group(1)).strip()
-            self.log.log(5, "size = %s" % self.details["size"])
+            self.log.log(5, "size = {0}".format(self.details["size"]))
         else:
             self.details["size"] = ""
             self.log.error("Size not found.")
 
         match = re.search("<span id=['\"]Difficulty['\"]><img src=['\"]http://www.geocaching.com/images/stars/[^\"']*['\"] alt=['\"]([0-9.]+) out of 5['\"]", self.data, re.I)
-        if match:
+        if match is not None:
             self.details["difficulty"] = float(match.group(1))
-            self.log.log(5, "difficulty = %.1f" % self.details["difficulty"])
+            self.log.log(5, "difficulty = {0:.1f}".format(self.details["difficulty"]))
         else:
             self.details["difficulty"] = 0
             self.log.error("Difficulty not found.")
 
         match = re.search("<span id=['\"]Terrain['\"]><img src=['\"]http://www.geocaching.com/images/stars/[^\"']*['\"] alt=['\"]([0-9.]+) out of 5['\"]", self.data, re.I)
-        if match:
+        if match is not None:
             self.details["terrain"] = float(match.group(1))
-            self.log.log(5, "terrain = %.1f" % self.details["terrain"])
+            self.log.log(5, "terrain = {0:.1f}".format(self.details["terrain"]))
         else:
             self.details["terrain"] = 0
             self.log.error("Terrain not found.")
 
         match = re.search("<span id=['\"]LatLon['\"][^>]*>([NS]) ([0-9]+)° ([0-9.]+) ([WE]) ([0-9]+)° ([0-9.]+)</span>", self.data, re.I)
-        if match:
+        if match is not None:
             self.details["lat"] = float(match.group(2)) + float(match.group(3))/60
             if match.group(1) == "S":
                 self.details["lat"] = -self.details["lat"]
             self.details["lon"] = float(match.group(5)) + float(match.group(6))/60
             if match.group(4) == "W":
                 self.details["lon"] = -self.details["lon"]
-            self.log.log(5, "lat = %f" % self.details["lat"])
-            self.log.log(5, "lon = %f" % self.details["lon"])
+            self.log.log(5, "lat = {0:.5f}".format(self.details["lat"]))
+            self.log.log(5, "lon = {0:.5f}".format(self.details["lon"]))
         else:
             self.details["lat"] = 0
             self.details["lon"] = 0
@@ -466,82 +468,81 @@ class Cache(BaseParser):
 
         self.details["province"] = ""
         match = re.search("<span id=['\"]Location['\"]>In (([^,<]+), )?([^<]+)</span>", self.data, re.I)
-        if match:
+        if match is not None:
             self.details["country"] = self.unescape(match.group(3)).strip()
-            if match.group(2):
+            if match.group(2) is not None:
                 self.details["province"] = self.unescape(match.group(2)).strip()
-                self.log.log(5, "province = %s" % self.details["province"])
-            self.log.log(5, "country = %s" % self.details["country"])
+                self.log.log(5, "province = {0}".format(self.details["province"]))
+            self.log.log(5, "country = {0}".format(self.details["country"]))
         else:
             self.details["country"] = ""
             self.log.error("Country not found.")
 
         match = re.search("<span id=['\"]ShortDescription['\"]>(.*?)</span>\s\s\s\s", self.data, re.I|re.S)
-        if match:
+        if match is not None:
+            self.details["shortDescHTML"] = match.group(1)
             self.details["shortDesc"] = self.cleanHTML(match.group(1))
-            self.log.log(5, "shortDesc = %s..." % self.details["shortDesc"].replace("\n"," ")[0:50])
+            self.log.log(5, "shortDesc = {0}...".format(self.details["shortDesc"].replace("\n"," ")[0:50]))
         else:
+            self.details["shortDescHTML"] = ""
             self.details["shortDesc"] = ""
 
         match = re.search("<span id=['\"]LongDescription['\"]>(.*?)</span>\s\s\s\s", self.data, re.I|re.S)
-        if match:
+        if match is not None:
+            self.details["longDescHTML"] = match.group(1)
             self.details["longDesc"] = self.cleanHTML(match.group(1))
-            self.log.log(5, "longDesc = %s..." % self.details["longDesc"].replace("\n"," ")[0:50])
+            self.log.log(5, "longDesc = {0}...".format(self.details["longDesc"].replace("\n"," ")[0:50]))
         else:
+            self.details["longDescHTML"] = ""
             self.details["longDesc"] = ""
 
         match = re.search("<span id=['\"]Hints['\"][^>]*>(.*)</span>", self.data, re.I)
-        if match:
-            self.details["hint"] = self.unescape(match.group(1).replace("<br>", "\n")).strip()
-            self.log.log(5, "hint = %s..." % self.details["hint"].replace("\n"," ")[0:50])
+        if match is not None:
+            self.details["hint"] = self.rot13(self.unescape(match.group(1).replace("<br>", "\n")).strip())
+            self.log.log(5, "hint = {0}...".format(self.details["hint"].replace("\n"," ")[0:50]))
         else:
             self.details["hint"] = ""
 
         match = re.search("<b>Attributes</b><br/><table.*?</table>([^<]+)", self.data, re.I)
-        if match:
+        if match is not None:
             self.details["attributes"] = match.group(1).strip()
-            self.log.log(5, "attributes = %s" % self.details["attributes"])
+            self.log.log(5, "attributes = {0}".format(self.details["attributes"]))
         else:
             self.details["attributes"] = ""
 
         self.details["inventory"] = {}
         match = re.search("<img src=['\"]\.\./images/WptTypes/sm/tb_coin\.gif['\"][^>]*>[^<]*<b>Inventory</b>.*?<table[^>]*>(.*?)<tr>[^<]*<td[^>]*>[^<]*<a[^>]*>See the history</a>", self.data, re.I|re.S)
-        if match:
+        if match is not None:
             for part in match.group(1).split("</tr>"):
                 match = re.search("<a href=['\"]http://www.geocaching.com/track/details.aspx\?guid=([a-z0-9-]+)['\"]>([^<]+)</a>", part, re.I)
-                if match:
+                if match is not None:
                     self.details["inventory"][match.group(1)] = self.unescape(match.group(2).strip())
-            self.log.log(5, "inventory = %s" % self.details["inventory"])
+            self.log.log(5, "inventory = {0}".format(self.details["inventory"]))
 
         self.details["visits"] = {}
         match = re.search("<span id=\"lblFindCounts\"[^>]*><table[^>]*>(.*?)</table></span>", self.data, re.I)
-        if match:
+        if match is not None:
             for part in match.group(1).split("</td><td>"):
                 match = re.search("<img[^>]*alt=\"([^\"]+)\"[^>]*/>([0-9]+)", part, re.I)
-                if match:
+                if match is not None:
                     self.details["visits"][match.group(1)] = int(match.group(2))
-            self.log.log(5, "visits = %s" % self.details["visits"])
+            self.log.log(5, "visits = {0}".format(self.details["visits"]))
 
         return self.details
 
 
 
-class MyFinds(BaseParser):
+class MyFindsParser(BaseParser):
     def __init__(self, GCparser):
         BaseParser.__init__(self, GCparser)
-        self.log = logging.getLogger("GCparser.MyFinds")
+        self.log = logging.getLogger("GCparser.MyFindsParser")
         self.cacheList = None
-        self.count     = None
+        self.count = None
 
 
     def load(self):
         """Loads data from webpage"""
-        if self.data is None:
-            web = self.GCparser.fetch.fetch("http://www.geocaching.com/my/logs.aspx?s=1", authenticate=True)
-            self.read(web)
-            if not self.checkLogin():
-                self.GCparser.auth.login()
-                self.load()
+        self._load("http://www.geocaching.com/my/logs.aspx?s=1", True)
 
 
     def getList(self):
@@ -565,23 +566,23 @@ class MyFinds(BaseParser):
             cache = None
             for line in self.data.splitlines():
                 match = re.search("<td[^>]*><img[^>]*(Found it|Webcam Photo Taken|Attended)[^>]*></td>", line, re.I)
-                if match:
+                if match is not None:
                     cache = {"sequence":total-len(self.cacheList)}
                     self.log.debug("NEW cache record")
-                    self.log.log(5, "sequence = %d" % cache["sequence"])
+                    self.log.log(5, "sequence = {0}".format(cache["sequence"]))
 
                 if cache is not None:
                     if "f_date" not in cache:
                         match = re.search("<td[^>]*>([0-9]+)/([0-9]+)/([0-9]+)</td>", line, re.I)
-                        if match:
-                            cache["f_date"] = "%4d-%02d-%02d" % (int(match.group(3)), int(match.group(1)), int(match.group(2)))
-                            self.log.log(5, "f_date = %s" % cache["f_date"])
+                        if match is not None:
+                            cache["f_date"] = "{0:4d}-{0:2d}-{0:2d}".format(int(match.group(3)), int(match.group(1)), int(match.group(2)))
+                            self.log.log(5, "f_date = {0}".format(cache["f_date"]))
 
                     if "guid" not in cache:
                         match = re.search("<td[^>]*><a href=['\"]http://www.geocaching.com/seek/cache_details.aspx\?guid=([a-z0-9-]+)['\"][^>]*>(<font color=\"red\">)?(<strike>)?([^<]+)(</strike>)?[^<]*(</font>)?[^<]*</a>[^<]*</td>", line, re.I)
-                        if match:
+                        if match is not None:
                             cache["guid"] = match.group(1)
-                            cache["name"] = match.group(4).strip()
+                            cache["name"] = self.unescape(match.group(4).strip())
                             if match.group(3):
                                 cache["disabled"] = 1
                             else:
@@ -590,16 +591,16 @@ class MyFinds(BaseParser):
                                 cache["archived"] = 1
                             else:
                                 cache["archived"] = 0
-                            self.log.log(5, "guid = %s" % cache["guid"])
-                            self.log.log(5, "name = %s" % self.unescape(cache["name"]))
-                            self.log.log(5, "disabled = %d" % cache["disabled"])
-                            self.log.log(5, "archived = %d" % cache["archived"])
+                            self.log.log(5, "guid = {0}".format(cache["guid"]))
+                            self.log.log(5, "name = {0}".format(cache["name"]))
+                            self.log.log(5, "disabled = {0}".format(cache["disabled"]))
+                            self.log.log(5, "archived = {0}".format(cache["archived"]))
 
                     match = re.search("<td[^>]*>\[<a href=['\"]http://www.geocaching.com/seek/log.aspx\?LUID=([a-z0-9-]+)['\"][^>]*>visit log</a>\]</td>", line, re.I)
-                    if match:
+                    if match is not None:
                         cache["f_luid"] = match.group(1)
-                        self.log.log(5, "f_luid = %s" % cache["f_luid"])
-                        self.log.debug("END of cache record '%s'" % cache["name"])
+                        self.log.log(5, "f_luid = {0}".format(cache["f_luid"]))
+                        self.log.debug("END of cache record '{0}'".format(cache["name"]))
                         self.cacheList.append(cache)
                         cache = None
 
@@ -626,26 +627,29 @@ class EditProfile(BaseParser):
         self.profileData = profileData
 
 
-    def getForm(self):
-        """Prepare form for updating profile"""
-        profile = self.GCparser.fetch.fetch("http://www.geocaching.com/account/editprofiledetails.aspx", authenticate=True)
-        self.read(profile)
-        if not self.checkLogin():
-            self.GCparser.auth.login()
-            self.getForm()
-
-
     def save(self):
         """Saves data in user's profile"""
-        self.getForm()
+        self._load("http://www.geocaching.com/account/editprofiledetails.aspx", True)
 
         data = {}
         for line in self.data.splitlines():
             match = re.search('<input type="hidden" name="([^"]+)"[^>]+value="([^"]+)"', line)
-            if match:
+            if match is not None:
                 data[match.group(1)] = match.group(2)
         data["ctl00$ContentBody$uxProfileDetails"] = self.profileData
         data["ctl00$ContentBody$uxSave"] = "Save Changes"
 
-        profile = self.GCparser.fetch.fetch("http://www.geocaching.com/account/editprofiledetails.aspx", data = data, authenticate = True)
-        self.read(profile)
+        self.data = None
+        self._load("http://www.geocaching.com/account/editprofiledetails.aspx", True, data=data)
+
+
+
+"""
+    EXCEPTIONS
+"""
+
+class CredentialsException(AssertionError):
+    pass
+
+class LoginException(AssertionError):
+    pass
