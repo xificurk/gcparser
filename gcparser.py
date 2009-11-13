@@ -228,7 +228,6 @@ class Fetcher(object):
 
     def wait(self):
         """Waits for random number of seconds to lessen the load on geocaching.com"""
-        average
         # no fetch for a long time => reset firstFetch value using desired average
         self.firstFetch = max(time.time() - self.fetchCount*self.fetchAvgTime, self.firstFetch)
         # Compute count
@@ -306,6 +305,9 @@ class Fetcher(object):
         logged = True
         if data is not None:
             for line in data.splitlines():
+                if line.find("Sorry, the owner of this listing has made it viewable to subscribers only") != -1:
+                    self.log.debug("Subscribers only cache.")
+                    break
                 if line.find("You are not logged in.") != -1:
                     logged = False
                     break
