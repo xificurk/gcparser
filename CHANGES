@@ -1,12 +1,33 @@
 CHANGES
 ============================================================================
 
+Release 0.3 (2010-01-13)
+--------------------------
+
+[Enhancements]
+
+  * Better limitation of fetching from geocaching.com.
+
+[Bugfixes]
+
+  * MyFinds parser: attended/webcam log types.
+
+  * Cache parser: event date (thanks to Ruda Hamak).
+
+  * Cache parser: login bug on PM only caches.
+
+  * Cache parser: "Unknown Cache" -> "Mystery/Puzzle Cache"
+
+  * GS webpage design update.
+
+
 Release 0.2 (2009-09-09)
 --------------------------
 
 [Enhancements]
 
   * EditProfile parser.
+
 
 Release 0.1.2 (2009-09-09)
 --------------------------
@@ -16,6 +37,7 @@ Release 0.1.2 (2009-09-09)
   * Better source for parsing size attribute in Cache details.
 
   * Few minor bugfixes.
+
 
 Release 0.1.1 (2009-09-07)
 --------------------------
