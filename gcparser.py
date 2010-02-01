@@ -299,7 +299,7 @@ class Fetcher(object):
         data["ctl00$MiniProfile$loginRemember"] = "on"
 
         for line in webpage.splitlines():
-            match = BaseParser.pcre("hiddenInput").search(line)
+            match = BaseParser.pcre(BaseParser(self), "hiddenInput").search(line)
             if match:
                 data[match.group(1)] = match.group(2)
 
@@ -368,6 +368,16 @@ class BaseParser(object):
     # <p class="OldWarning"><strong>Cache Issues:</strong></p><ul class="OldWarning"><li>This cache is temporarily unavailable. Read the logs below to read the status for this cache.</li></ul></span>
     __pcresMask["disabled"] = ("<p class=['\"]OldWarning['\"][^>]*><strong>Cache Issues:</strong></p><ul[^>]*><li>This cache (has been archived|is temporarily unavailable)[^<]*</li>", re.I)
 
+    """ logs list """
+    # <td><img src="/images/icons/icon_smile.gif" width="16" height="16" alt="Found it" /></td>
+    __pcresMask["logsFound"] = ("<td[^>]*><img[^>]*(Found it|Webcam Photo Taken|Attended)[^>]*></td>", re.I)
+    # <td>7/23/2008</td>
+    __pcresMask["logsDate"] = ("<td[^>]*>([0-9]+)/([0-9]+)/([0-9]+)</td>", re.I)
+    # <td><a href="http://www.geocaching.com/seek/cache_details.aspx?guid=2bb2acc4-1689-4169-953c-4a69e7ccd43d"><span class="Strike Warning">Zumberk</span></a>&nbsp;</td>
+    __pcresMask["logsName"] = ("<td[^>]*><a href=['\"][^'\"]*/seek/cache_details.aspx\?guid=([a-z0-9-]+)['\"][^>]*>(<span class=\"Strike Warning\">)?(<strike>)?([^<]+)(</strike>)?[^<]*(</span>)?[^<]*</a>[^<]*</td>", re.I)
+    # <td><a href="http://www.geocaching.com/seek/log.aspx?LUID=a3e234b3-7d34-4a26-bde5-487e4297133c" target="_blank" title="Visit Log">Visit Log</a></td>
+    __pcresMask["logsLog"] = ("<td[^>]*><a href=['\"]http://www.geocaching.com/seek/log.aspx\?LUID=([a-z0-9-]+)['\"][^>]*>Visit Log</a></td>", re.I)
+
     """ cache search """
     # <td class="PageBuilderWidget"><span>Total Records: <b>5371</b> - Page: <b>1</b> of <b>269</b>
     __pcresMask["searchTotals"] = ("<td class=\"PageBuilderWidget\"><span>Total Records: <b>([0-9]+)</b> - Page: <b>[0-9]+</b> of <b>([0-9]+)</b>", re.I)
@@ -384,7 +394,7 @@ class BaseParser(object):
     # <td>30 Jan 10 <img src="/images/new3.gif" alt="New!" /></td>
     __pcresMask["listHidden"] = ("<td>([0-9]+) ([A-Za-z]+) ([0-9]+)( <img[^>]*alt=['\"]New!['\"][^>]*>)?</td>", re.I)
     # <td><a href="/seek/cache_details.aspx?guid=2ea382d9-be75-4987-8fe2-1cca3be96a60"><span class="Strike">Kajetanka</span></a> by Rescator (GCYZ08)<br />Hlavni mesto Praha </td>
-    __pcresMask["listName"] = ("<td><a href=['\"]/seek/cache_details.aspx\?guid=([a-z0-9-]+)['\"]>(<span class=\"Strike\">)?([^<]+)(</span>)?</a> by (.*?) \((GC[0-9A-Z]+)\)<br />([^<]+)</td>", re.I)
+    __pcresMask["listName"] = ("<td><a href=['\"][^'\"]*/seek/cache_details.aspx\?guid=([a-z0-9-]+)['\"]>(<span class=\"Strike\">)?([^<]+)(</span>)?</a> by (.*?) \((GC[0-9A-Z]+)\)<br />([^<]+)</td>", re.I)
     # <td>27 Dec 09<br /><span class="Success"></span></td>
     __pcresMask["listFoundDate"] = ("<td>([0-9]+) ([A-Za-z]+) ([0-9]+)<br /><span class=\"Success\"></span></td>", re.I)
     # <td>4 days ago*<br /><span class="Success"></span></td>
@@ -719,16 +729,9 @@ class MyFindsParser(BaseParser):
         self.cacheList = []
 
         if total > 0:
-            """
-                <td><img src="/images/icons/icon_smile.gif" width="16" height="16" alt="Found it" /></td>
-                <td>7/23/2008</td>
-                <td><a href="http://www.geocaching.com/seek/cache_details.aspx?guid=2bb2acc4-1689-4169-953c-4a69e7ccd43d"><span class="Strike Warning">Zumberk</span></a>&nbsp;</td>
-                <td>Czech Republic &nbsp;</td>
-                <td><a href="http://www.geocaching.com/seek/log.aspx?LUID=a3e234b3-7d34-4a26-bde5-487e4297133c" target="_blank" title="Visit Log">Visit Log</a></td>
-            """
             cache = None
             for line in self.data.splitlines():
-                match = re.search("<td[^>]*><img[^>]*(Found it|Webcam Photo Taken|Attended)[^>]*></td>", line, re.I)
+                match = self.pcre("logsFound").search(line)
                 if match is not None:
                     cache = {"sequence":total-len(self.cacheList)}
                     self.log.debug("NEW cache record.")
@@ -736,13 +739,13 @@ class MyFindsParser(BaseParser):
 
                 if cache is not None:
                     if "f_date" not in cache:
-                        match = re.search("<td[^>]*>([0-9]+)/([0-9]+)/([0-9]+)</td>", line, re.I)
+                        match = self.pcre("logsDate").search(line)
                         if match is not None:
                             cache["f_date"] = "{0:04d}-{1:02d}-{2:02d}".format(int(match.group(3)), int(match.group(1)), int(match.group(2)))
                             self.log.log(LOG_PARSER, "f_date = {0}".format(cache["f_date"]))
 
                     if "guid" not in cache:
-                        match = re.search("<td[^>]*><a href=['\"]http://www.geocaching.com/seek/cache_details.aspx\?guid=([a-z0-9-]+)['\"][^>]*>(<span class=\"Strike Warning\">)?(<strike>)?([^<]+)(</strike>)?[^<]*(</span>)?[^<]*</a>[^<]*</td>", line, re.I)
+                        match = self.pcre("logsName").search(line)
                         if match is not None:
                             cache["guid"] = match.group(1)
                             cache["name"] = self.unescape(match.group(4)).strip()
@@ -760,7 +763,7 @@ class MyFindsParser(BaseParser):
                             self.log.log(LOG_PARSER, "disabled = {0}".format(cache["disabled"]))
                             self.log.log(LOG_PARSER, "archived = {0}".format(cache["archived"]))
 
-                    match = re.search("<td[^>]*><a href=['\"]http://www.geocaching.com/seek/log.aspx\?LUID=([a-z0-9-]+)['\"][^>]*>Visit Log</a></td>", line, re.I)
+                    match = self.pcre("logsLog").search(line)
                     if match is not None:
                         cache["f_luid"] = match.group(1)
                         self.log.log(LOG_PARSER, "f_luid = {0}".format(cache["f_luid"]))
@@ -779,7 +782,7 @@ class MyFindsParser(BaseParser):
 
         self.load()
 
-        self.count = len(re.findall("<td[^>]*><img[^>]*(Found it|Webcam Photo Taken|Attended)[^>]*></td>", self.data, re.I))
+        self.count = len(self.pcre("logsFound").findall(self.data))
 
         return self.count
 
@@ -892,7 +895,7 @@ class SeekParser(BaseParser):
                         cache["name"] = self.unescape(match.group(3)).strip()
                         cache["owner"] = self.unescape(match.group(5)).strip()
                         cache["waypoint"] = match.group(6).strip()
-                        cache["province"] = self.unescape(match.group(7)).strip()
+                        cache["location"] = self.unescape(match.group(7)).strip()
                         if match.group(2):
                             cache["disabled"] = 1
                         else:
@@ -901,7 +904,7 @@ class SeekParser(BaseParser):
                         self.log.log(LOG_PARSER, "name = {0}".format(cache["name"]))
                         self.log.log(LOG_PARSER, "owner = {0}".format(cache["owner"]))
                         self.log.log(LOG_PARSER, "waypoint = {0}".format(cache["waypoint"]))
-                        self.log.log(LOG_PARSER, "province = {0}".format(cache["province"]))
+                        self.log.log(LOG_PARSER, "location = {0}".format(cache["location"]))
                         self.log.log(LOG_PARSER, "disabled = {0}".format(cache["disabled"]))
 
                 if not cache["found"]:
