@@ -828,6 +828,8 @@ class SeekParser(BaseParser):
         if self.page >= 1 and self.page >= self.getPageCount():
             return False
         self.page = self.page + 1
+        if self.postData is not None:
+            self.postData["__EVENTTARGET"] = "ctl00$ContentBody$pgrTop$ctl08"
         self.data = self.fetcher.fetch(self.url, data=self.postData)
 
 
@@ -838,7 +840,7 @@ class SeekParser(BaseParser):
             if self.page >= self.getPageCount():
                 return False
 
-        if self.page > 1 or self.data is None:
+        if self.postData is not None or self.data is None:
             self.loadNext()
 
         if self.postData is None:
