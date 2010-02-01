@@ -29,3 +29,11 @@ print(details)
 """ Let's update our profile.
 """
 gcp.parse("editProfile", "Pyggs profile update test.").save()
+
+""" Let's find some caches by coordinates.
+"""
+search = gcp.parse("seek", type="coord", data={"lat":50.084, "lon":14.434, "dist":3})
+print("Seek by coord:")
+print(search.getPageCount())
+print(search.getCacheCount())
+print(search.getList())
