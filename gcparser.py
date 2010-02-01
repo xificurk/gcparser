@@ -503,6 +503,14 @@ class CacheParser(BaseParser):
 
         self.details = {}
 
+        match = pcre("waypoint").search(self.data)
+        if match is not None:
+            self.details["waypoint"] = match.group(0)
+            self.log.log(LOG_PARSER, "waypoint = {0}".format(self.details["waypoint"]))
+        else:
+            self.details["waypoint"] = ""
+            self.log.error("Waypoint not found.")
+
         match = pcre("PMonly").search(self.data)
         if match is not None:
             self.log.warn("PM only cache at '{0}'.".format(self.url))
@@ -521,14 +529,6 @@ class CacheParser(BaseParser):
             self.details["disabled"] = 1
             self.log.log(LOG_PARSER, "archived = {0}".format(self.details["archived"]))
             self.log.log(LOG_PARSER, "disabled = {0}".format(self.details["disabled"]))
-
-        match = pcre("waypoint").search(self.data)
-        if match is not None:
-            self.details["waypoint"] = match.group(0)
-            self.log.log(LOG_PARSER, "waypoint = {0}".format(self.details["waypoint"]))
-        else:
-            self.details["waypoint"] = ""
-            self.log.error("Waypoint not found.")
 
         match = pcre("cacheName").search(self.data)
         if match is not None:
