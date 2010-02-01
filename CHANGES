@@ -1,6 +1,18 @@
 CHANGES
 ============================================================================
 
+Release 0.4 (2010-02-01)
+--------------------------
+
+[Enhancements]
+
+  * SeekParser: new parser for searching caches by coordinates.
+
+[Bugfixes]
+
+  * CacheParser: parse waypoint for PM only caches.
+
+
 Release 0.3.1 (2010-01-13)
 --------------------------
 
