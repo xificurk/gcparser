@@ -367,6 +367,40 @@ class BaseParser(object):
     __pcresMask["PMonly"] = ("<p class=['\"]Warning['\"][^>]*>Sorry, the owner of this listing has made it viewable to Premium Members only", re.I)
     # <p class="OldWarning"><strong>Cache Issues:</strong></p><ul class="OldWarning"><li>This cache is temporarily unavailable. Read the logs below to read the status for this cache.</li></ul></span>
     __pcresMask["disabled"] = ("<p class=['\"]OldWarning['\"][^>]*><strong>Cache Issues:</strong></p><ul[^>]*><li>This cache (has been archived|is temporarily unavailable)[^<]*</li>", re.I)
+    __pcresMask["waypoint"] = ("GC[A-Z0-9]+", 0)
+    # <span id="ctl00_ContentBody_CacheName">Jazyky</span>
+    __pcresMask["cacheName"] = ("<span id=['\"]ctl00_ContentBody_CacheName['\"]>([^<]+)</span>", re.I)
+    # <span id="ctl00_ContentBody_DateHidden">6/13/2008</span>
+    __pcresMask["cacheHidden"] = ("<span id=['\"]ctl00_ContentBody_DateHidden['\"]>([0-9]+)/([0-9]+)/([0-9]+)</span>", re.I)
+    # <span id="ctl00_ContentBody_DateHidden">Saturday, January 16, 2010</span>
+    __pcresMask["cacheHidden2"] = ("<span id=['\"]ctl00_ContentBody_DateHidden['\"]>[A-Za-z]+, ([A-Za-z]+) ([0-9]+), ([0-9]+)</span>", re.I)
+    # <span id="ctl00_ContentBody_CacheOwner">Letterbox Hybrid<br />Size: Regular<br />by <a href="http://www.geocaching.com/profile/?guid=d5a1fb67-d246-4d6a-b835-20b1be093b87&wid=8583f541-dfcf-4690-99f3-73430e7c0f52&ds=2">onovy, cherubin</a></span>
+    __pcresMask["cacheOwner"] = ("<span id=['\"]ctl00_ContentBody_CacheOwner['\"]>([^<]+)<br />Size: ([^<]+)<br />by <a href=['\"]http://www.geocaching.com/profile/\?guid=([a-z0-9-]+)&wid=([a-z0-9-]+)[^'\"]*['\"]>([^<]+)</a></span>", re.I)
+    # <img src="/images/icons/container/not_chosen.gif" alt="Size: Not chosen" />
+    __pcresMask["cacheSize"] = ("<img[^>]*src=['\"][^'\"]*/icons/container/[^'\"]*['\"][^>]*alt=['\"]Size: ([^'\"]+)['\"][^>]*>", re.I)
+    # <span id="ctl00_ContentBody_Difficulty"><img src="http://www.geocaching.com/images/stars/stars3.gif" alt="3 out of 5" /></span>
+    __pcresMask["cacheDifficulty"] = ("<span id=['\"]ctl00_ContentBody_Difficulty['\"]><img src=['\"]http://www.geocaching.com/images/stars/[^\"']*['\"] alt=['\"]([0-9.]+) out of 5['\"]", re.I)
+    # <span id="ctl00_ContentBody_Terrain"><img src="http://www.geocaching.com/images/stars/stars1_5.gif" alt="1.5 out of 5" /></span>
+    __pcresMask["cacheTerrain"] = ("<span id=['\"]ctl00_ContentBody_Terrain['\"]><img src=['\"]http://www.geocaching.com/images/stars/[^\"']*['\"] alt=['\"]([0-9.]+) out of 5['\"]", re.I)
+    # <span id="ctl00_ContentBody_LatLon" style="font-weight:bold;">N 50° 02.173 E 015° 46.386</span>
+    __pcresMask["cacheLatLon"] = ("<span id=['\"]ctl00_ContentBody_LatLon['\"][^>]*>([NS]) ([0-9]+)° ([0-9.]+) ([WE]) ([0-9]+)° ([0-9.]+)</span>", re.I)
+    # <span id="ctl00_ContentBody_Location">In Pardubicky kraj, Czech Republic</span>
+    __pcresMask["cacheLocation"] = ("<span id=['\"]ctl00_ContentBody_Location['\"]>In (([^,<]+), )?([^<]+)</span>", re.I)
+    __pcresMask["cacheShortDesc"] = ("<span id=['\"]ctl00_ContentBody_ShortDescription['\"]>(.*?)</span><div class=\"Clear\"></div>", re.I|re.S)
+    __pcresMask["cacheLongDesc"] = ("<span id=['\"]ctl00_ContentBody_LongDescription['\"]>(.*?)</span>\s*\n\s+<p>\s+</p>\s+</td>", re.I|re.S)
+    # <span id="ctl00_ContentBody_Hints" class="displayMe">Esoteric programming language<br></span>
+    __pcresMask["cacheHint"] = ("<span id=['\"]ctl00_ContentBody_Hints['\"][^>]*>(.*?)</span>", re.I)
+    # <p class="NoSpacing"><small><a href="/about/icons.aspx" title="What are Attributes?">What are Attributes?</a></small></p>stroller accessible, stealth required, recommended at night, available 24-7, bikes allowed, takes less than 1  hour, telephone nearby, public transit available, parking available, dogs allowed
+    __pcresMask["cacheAttributes"] = ("<p[^>]*><small><a href=['\"]/about/icons\.aspx['\"] title=['\"]What are Attributes\?['\"]>What are Attributes\?</a></small></p>([^<]+)", re.I)
+    # <img src="/images/WptTypes/sm/tb_coin.gif" width="16" height="16" alt="Inventory" />&nbsp;Inventory</h3>
+    # <p class="NoSpacing"><a href="/track/search.aspx?wid=31908057-2da9-460b-a02c-3a246ffca7e7&ccid=1372939">more...</a><br /><a href="/track/search.aspx?wid=31908057-2da9-460b-a02c-3a246ffca7e7">See the history...</a><br /><a href="/track/faq.aspx" title="What is a Travel Bug?">What is a Travel Bug?</a></p>
+    __pcresMask["cacheInventory"] = ("<img src=['\"]/images/WptTypes/sm/tb_coin\.gif['\"][^>]*>[^<]*?Inventory</h3>[^<]*<div class=['\"]WidgetBody['\"]>[^<]*<ul[^>]*>(.*?)</ul>[^<]*<p[^>]*>[^<]*<a[^>]*>(more\.\.\.|See the history)</a>", re.I|re.S)
+    # <a href="http://www.geocaching.com/track/details.aspx?guid=bbf74f7a-510e-4a3c-8ebf-5eb140b40440">**Voortrekkers** Racenijntje</a>
+    __pcresMask["cacheItem"] = ("<a href=['\"][^'\"]*/track/details.aspx\?guid=([a-z0-9-]+)['\"]>([^<]+)</a>", re.I)
+    # <span id="ctl00_ContentBody_lblFindCounts"><p><img src="/images/icons/icon_smile.gif" alt="Found it" />113&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="/images/icons/icon_note.gif" alt="Write note" />19&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="/images/icons/icon_remove.gif" alt="Needs Archived" />1&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="/images/icons/icon_disabled.gif" alt="Temporarily Disable Listing" />2&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="/images/icons/icon_enabled.gif" alt="Enable Listing" />1&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="/images/icons/icon_greenlight.gif" alt="Publish Listing" />1&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="/images/icons/icon_maint.gif" alt="Owner Maintenance" />2&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="/images/icons/big_smile.gif" alt="Post Reviewer Note" />3&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></span>
+    __pcresMask["cacheVisits"] = ("<span id=['\"]ctl00_ContentBody_lblFindCounts['\"][^>]*><p[^>]*>(.*?)</p></span>", re.I)
+    # <img src="/images/icons/icon_smile.gif" alt="Found it" />113
+    __pcresMask["cacheLogCount"] = ("<img[^>]*alt=\"([^\"]+)\"[^>]*/>([0-9]+)", re.I)
 
     """ logs list """
     # <td><img src="/images/icons/icon_smile.gif" width="16" height="16" alt="Found it" /></td>
@@ -376,7 +410,7 @@ class BaseParser(object):
     # <td><a href="http://www.geocaching.com/seek/cache_details.aspx?guid=2bb2acc4-1689-4169-953c-4a69e7ccd43d"><span class="Strike Warning">Zumberk</span></a>&nbsp;</td>
     __pcresMask["logsName"] = ("<td[^>]*><a href=['\"][^'\"]*/seek/cache_details.aspx\?guid=([a-z0-9-]+)['\"][^>]*>(<span class=\"Strike Warning\">)?(<strike>)?([^<]+)(</strike>)?[^<]*(</span>)?[^<]*</a>[^<]*</td>", re.I)
     # <td><a href="http://www.geocaching.com/seek/log.aspx?LUID=a3e234b3-7d34-4a26-bde5-487e4297133c" target="_blank" title="Visit Log">Visit Log</a></td>
-    __pcresMask["logsLog"] = ("<td[^>]*><a href=['\"]http://www.geocaching.com/seek/log.aspx\?LUID=([a-z0-9-]+)['\"][^>]*>Visit Log</a></td>", re.I)
+    __pcresMask["logsLog"] = ("<td[^>]*><a href=['\"][^'\"]*/seek/log.aspx\?LUID=([a-z0-9-]+)['\"][^>]*>Visit Log</a></td>", re.I)
 
     """ cache search """
     # <td class="PageBuilderWidget"><span>Total Records: <b>5371</b> - Page: <b>1</b> of <b>269</b>
@@ -532,7 +566,7 @@ class CacheParser(BaseParser):
             self.log.log(LOG_PARSER, "archived = {0}".format(self.details["archived"]))
             self.log.log(LOG_PARSER, "disabled = {0}".format(self.details["disabled"]))
 
-        match = re.search("GC[A-Z0-9]+", self.data)
+        match = self.pcre("waypoint").search(self.data)
         if match is not None:
             self.details["waypoint"] = match.group(0)
             self.log.log(LOG_PARSER, "waypoint = {0}".format(self.details["waypoint"]))
@@ -540,8 +574,7 @@ class CacheParser(BaseParser):
             self.details["waypoint"] = ""
             self.log.error("Waypoint not found.")
 
-        # <span id="ctl00_ContentBody_CacheName">Jazyky</span>
-        match = re.search("<span id=['\"]ctl00_ContentBody_CacheName['\"]>([^<]+)</span>", self.data, re.I)
+        match = self.pcre("cacheName").search(self.data)
         if match is not None:
             self.details["name"] = self.unescape(match.group(1)).strip()
             self.log.log(LOG_PARSER, "name = {0}".format(self.details["name"]))
@@ -549,14 +582,12 @@ class CacheParser(BaseParser):
             self.details["name"] = ""
             self.log.error("Name not found.")
 
-        # <span id="ctl00_ContentBody_DateHidden">6/13/2008</span>
-        match = re.search("<span id=['\"]ctl00_ContentBody_DateHidden['\"]>([0-9]+)/([0-9]+)/([0-9]+)</span>", self.data, re.I)
+        match = self.pcre("cacheHidden").search(self.data)
         if match is not None:
             self.details["hidden"] = "{0:04d}-{1:02d}-{2:02d}".format(int(match.group(3)), int(match.group(1)), int(match.group(2)))
             self.log.log(LOG_PARSER, "hidden = {0}".format(self.details["hidden"]))
         else:
-            # <span id="ctl00_ContentBody_DateHidden">Saturday, January 16, 2010</span>
-            match = re.search("<span id=['\"]ctl00_ContentBody_DateHidden['\"]>[A-Za-z]+, ([A-Za-z]+) ([0-9]+), ([0-9]+)</span>", self.data, re.I)
+            match = self.pcre("cacheHidden2").search(self.data)
             if match is not None:
                 month = {"January":1, "February":2, "March":3, "April":4, "May":5, "June":6, "July":7, "August":8, "September":9, "October":10, "November":11, "December":12}[match.group(1)]
                 self.details["hidden"] = "{0:04d}-{1:02d}-{2:02d}".format(int(match.group(3)), month, int(match.group(2)))
@@ -565,8 +596,7 @@ class CacheParser(BaseParser):
                 self.details["hidden"] = "1980-01-01"
                 self.log.error("Hidden date not found.")
 
-        # <span id="ctl00_ContentBody_CacheOwner">Letterbox Hybrid<br />Size: Regular<br />by <a href="http://www.geocaching.com/profile/?guid=d5a1fb67-d246-4d6a-b835-20b1be093b87&wid=8583f541-dfcf-4690-99f3-73430e7c0f52&ds=2">onovy, cherubin</a></span>
-        match = re.search("<span id=['\"]ctl00_ContentBody_CacheOwner['\"]>([^<]+)<br />Size: ([^<]+)<br />by <a href=['\"]http://www.geocaching.com/profile/\?guid=([a-z0-9-]+)&wid=([a-z0-9-]+)[^'\"]*['\"]>([^<]+)</a></span>", self.data, re.I)
+        match = self.pcre("cacheOwner").search(self.data)
         if match is not None:
             self.details["type"] = self.unescape(match.group(1)).strip()
             # GS weird changes bug
@@ -586,8 +616,7 @@ class CacheParser(BaseParser):
             self.details["owner_id"] = ""
             self.log.error("Type, guid, owner, owner_id not found.")
 
-        # <img src="/images/icons/container/not_chosen.gif" alt="Size: Not chosen" />
-        match = re.search("<img[^>]*src=['\"][^'\"]*/icons/container/[^'\"]*['\"][^>]*alt=['\"]Size: ([^'\"]+)['\"][^>]*>", self.data, re.I)
+        match = self.pcre("cacheSize").search(self.data)
         if match is not None:
             self.details["size"] = self.unescape(match.group(1)).strip()
             self.log.log(LOG_PARSER, "size = {0}".format(self.details["size"]))
@@ -595,8 +624,7 @@ class CacheParser(BaseParser):
             self.details["size"] = ""
             self.log.error("Size not found.")
 
-        # <span id="ctl00_ContentBody_Difficulty"><img src="http://www.geocaching.com/images/stars/stars3.gif" alt="3 out of 5" /></span>
-        match = re.search("<span id=['\"]ctl00_ContentBody_Difficulty['\"]><img src=['\"]http://www.geocaching.com/images/stars/[^\"']*['\"] alt=['\"]([0-9.]+) out of 5['\"]", self.data, re.I)
+        match = self.pcre("cacheDifficulty").search(self.data)
         if match is not None:
             self.details["difficulty"] = float(match.group(1))
             self.log.log(LOG_PARSER, "difficulty = {0:.1f}".format(self.details["difficulty"]))
@@ -604,8 +632,7 @@ class CacheParser(BaseParser):
             self.details["difficulty"] = 0
             self.log.error("Difficulty not found.")
 
-        # <span id="ctl00_ContentBody_Terrain"><img src="http://www.geocaching.com/images/stars/stars1_5.gif" alt="1.5 out of 5" /></span>
-        match = re.search("<span id=['\"]ctl00_ContentBody_Terrain['\"]><img src=['\"]http://www.geocaching.com/images/stars/[^\"']*['\"] alt=['\"]([0-9.]+) out of 5['\"]", self.data, re.I)
+        match = self.pcre("cacheTerrain").search(self.data)
         if match is not None:
             self.details["terrain"] = float(match.group(1))
             self.log.log(LOG_PARSER, "terrain = {0:.1f}".format(self.details["terrain"]))
@@ -613,8 +640,7 @@ class CacheParser(BaseParser):
             self.details["terrain"] = 0
             self.log.error("Terrain not found.")
 
-        # <span id="ctl00_ContentBody_LatLon" style="font-weight:bold;">N 50° 02.173 E 015° 46.386</span>
-        match = re.search("<span id=['\"]ctl00_ContentBody_LatLon['\"][^>]*>([NS]) ([0-9]+)° ([0-9.]+) ([WE]) ([0-9]+)° ([0-9.]+)</span>", self.data, re.I)
+        match = self.pcre("cacheLatLon").search(self.data)
         if match is not None:
             self.details["lat"] = float(match.group(2)) + float(match.group(3))/60
             if match.group(1) == "S":
@@ -630,8 +656,7 @@ class CacheParser(BaseParser):
             self.log.error("Lat, lon not found.")
 
         self.details["province"] = ""
-        # <span id="ctl00_ContentBody_Location">In Pardubicky kraj, Czech Republic</span>
-        match = re.search("<span id=['\"]ctl00_ContentBody_Location['\"]>In (([^,<]+), )?([^<]+)</span>", self.data, re.I)
+        match = self.pcre("cacheLocation").search(self.data)
         if match is not None:
             self.details["country"] = self.unescape(match.group(3)).strip()
             if match.group(2) is not None:
@@ -642,7 +667,7 @@ class CacheParser(BaseParser):
             self.details["country"] = ""
             self.log.error("Country not found.")
 
-        match = re.search("<span id=['\"]ctl00_ContentBody_ShortDescription['\"]>(.*?)</span><div class=\"Clear\"></div>", self.data, re.I|re.S)
+        match = self.pcre("cacheShortDesc").search(self.data)
         if match is not None:
             self.details["shortDescHTML"] = match.group(1)
             self.details["shortDesc"] = self.cleanHTML(match.group(1))
@@ -651,7 +676,7 @@ class CacheParser(BaseParser):
             self.details["shortDescHTML"] = ""
             self.details["shortDesc"] = ""
 
-        match = re.search("<span id=['\"]ctl00_ContentBody_LongDescription['\"]>(.*?)</span>\s*\n\s+<p>\s+</p>\s+</td>", self.data, re.I|re.S)
+        match = self.pcre("cacheLongDesc").search(self.data)
         if match is not None:
             self.details["longDescHTML"] = match.group(1)
             self.details["longDesc"] = self.cleanHTML(match.group(1))
@@ -660,16 +685,14 @@ class CacheParser(BaseParser):
             self.details["longDescHTML"] = ""
             self.details["longDesc"] = ""
 
-        # <span id="ctl00_ContentBody_Hints" class="displayMe">Esoteric programming language<br></span>
-        match = re.search("<span id=['\"]ctl00_ContentBody_Hints['\"][^>]*>(.*?)</span>", self.data, re.I)
+        match = self.pcre("cacheHint").search(self.data)
         if match is not None:
             self.details["hint"] = self.unescape(match.group(1).replace("<br>", "\n")).strip()
             self.log.log(LOG_PARSER, "hint = {0}...".format(self.details["hint"].replace("\n"," ")[0:50]))
         else:
             self.details["hint"] = ""
 
-        # <p class="NoSpacing"><small><a href="/about/icons.aspx" title="What are Attributes?">What are Attributes?</a></small></p>stroller accessible, stealth required, recommended at night, available 24-7, bikes allowed, takes less than 1  hour, telephone nearby, public transit available, parking available, dogs allowed
-        match = re.search("<p[^>]*><small><a href=['\"]/about/icons\.aspx['\"] title=['\"]What are Attributes\?['\"]>What are Attributes\?</a></small></p>([^<]+)", self.data, re.I)
+        match = self.pcre("cacheAttributes").search(self.data)
         if match is not None:
             self.details["attributes"] = self.unescape(match.group(1)).strip()
             self.log.log(LOG_PARSER, "attributes = {0}".format(self.details["attributes"]))
@@ -677,24 +700,19 @@ class CacheParser(BaseParser):
             self.details["attributes"] = ""
 
         self.details["inventory"] = {}
-        # <img src="/images/WptTypes/sm/tb_coin.gif" width="16" height="16" alt="Inventory" />&nbsp;Inventory</h3>
-        # <p class="NoSpacing"><a href="/track/search.aspx?wid=31908057-2da9-460b-a02c-3a246ffca7e7&ccid=1372939">more...</a><br /><a href="/track/search.aspx?wid=31908057-2da9-460b-a02c-3a246ffca7e7">See the history...</a><br /><a href="/track/faq.aspx" title="What is a Travel Bug?">What is a Travel Bug?</a></p>
-        match = re.search("<img src=['\"]/images/WptTypes/sm/tb_coin\.gif['\"][^>]*>[^<]*?Inventory</h3>[^<]*<div class=['\"]WidgetBody['\"]>[^<]*<ul[^>]*>(.*?)</ul>[^<]*<p[^>]*>[^<]*<a[^>]*>(more\.\.\.|See the history)</a>", self.data, re.I|re.S)
+        match = self.pcre("cacheInventory").search(self.data)
         if match is not None:
             for part in match.group(1).split("</li>"):
-                # <a href="http://www.geocaching.com/track/details.aspx?guid=bbf74f7a-510e-4a3c-8ebf-5eb140b40440">**Voortrekkers** Racenijntje</a>
-                match = re.search("<a href=['\"]http://www.geocaching.com/track/details.aspx\?guid=([a-z0-9-]+)['\"]>([^<]+)</a>", part, re.I)
+                match = self.pcre("cacheItem").search(part)
                 if match is not None:
                     self.details["inventory"][match.group(1)] = self.unescape(match.group(2)).strip()
             self.log.log(LOG_PARSER, "inventory = {0}".format(self.details["inventory"]))
 
         self.details["visits"] = {}
-        # <span id="ctl00_ContentBody_lblFindCounts"><p><img src="/images/icons/icon_smile.gif" alt="Found it" />113&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="/images/icons/icon_note.gif" alt="Write note" />19&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="/images/icons/icon_remove.gif" alt="Needs Archived" />1&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="/images/icons/icon_disabled.gif" alt="Temporarily Disable Listing" />2&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="/images/icons/icon_enabled.gif" alt="Enable Listing" />1&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="/images/icons/icon_greenlight.gif" alt="Publish Listing" />1&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="/images/icons/icon_maint.gif" alt="Owner Maintenance" />2&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="/images/icons/big_smile.gif" alt="Post Reviewer Note" />3&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></span>
-        match = re.search("<span id=['\"]ctl00_ContentBody_lblFindCounts['\"][^>]*><p[^>]*>(.*?)</p></span>", self.data, re.I)
+        match = self.pcre("cacheVisits").search(self.data)
         if match is not None:
             for part in match.group(1).split("&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"):
-                # <img src="/images/icons/icon_smile.gif" alt="Found it" />113
-                match = re.search("<img[^>]*alt=\"([^\"]+)\"[^>]*/>([0-9]+)", part, re.I)
+                match = self.pcre("cacheLogCount").search(part)
                 if match is not None:
                     self.details["visits"][self.unescape(match.group(1)).strip()] = int(match.group(2))
             self.log.log(LOG_PARSER, "visits = {0}".format(self.details["visits"]))
