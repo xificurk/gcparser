@@ -1,6 +1,18 @@
 CHANGES
 ============================================================================
 
+Release 0.4.2 (2010-02-06)
+--------------------------
+
+[Enhancements]
+
+  * CacheParser: autodetect usage of guid or waypoint (BC break!).
+
+[Bugfixes]
+
+  * Fetcher: Catch only IOError exception.
+
+
 Release 0.4.1 (2010-02-05)
 --------------------------
 
