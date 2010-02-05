@@ -136,7 +136,7 @@ class Fetcher(object):
                 web = opener.open(url, urllib.parse.urlencode(data))
             else:
                 web = opener.open(url)
-        except:
+        except(IOError):
             self.log.error("An error occured while downloading '{0}', will retry in {1} seconds.".format(url, retry))
             time.sleep(retry)
             retry = min(5*retry, 600)
