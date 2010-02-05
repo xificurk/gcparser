@@ -1,6 +1,16 @@
 CHANGES
 ============================================================================
 
+Release 0.4.1 (2010-02-05)
+--------------------------
+
+[Bugfixes]
+
+  * SeekParser: cacheCount typo.
+
+  * Fetcher: Catch download errors, on fail retry after few seconds.
+
+
 Release 0.4 (2010-02-01)
 --------------------------
 
