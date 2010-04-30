@@ -843,8 +843,8 @@ class SeekParser(BaseParser):
                 data["lon_ew"] = 1
             else:
                 data["lon_ew"] = int(data["lon"]/abs(data["lon"]))
-            data["lat_mmss"] = data["lat"] - int(abs(data["lat"]))
-            data["lon_mmss"] = data["lon"] - int(abs(data["lon"]))
+            data["lat_mmss"] = (data["lat"] - int(abs(data["lat"])))*60
+            data["lon_mmss"] = (data["lon"] - int(abs(data["lon"])))*60
             data["lat"] = int(abs(data["lat"]))
             data["lon"] = int(abs(data["lon"]))
             self.url += "lat_ns={lat_ns:d}&lat_h={lat:d}&lat_mmss={lat_mmss:.4f}&long_ew={lon_ew:d}&long_h={lon:d}&long_mmss={lon_mmss:.4f}&dist={dist}&submit8=Search".format(**data)
