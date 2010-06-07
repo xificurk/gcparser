@@ -667,8 +667,9 @@ class CacheParser(BaseParser):
         if match is not None:
             self.details["attributes"] = []
             for item in pcre("cacheAttributesItem").finditer(match.group(1)):
-                if item != "blank":
-                    self.details["attributes"].append(unescape(item.group(1)).strip())
+                attr = unescape(item.group(1)).strip()
+                if attr != "blank":
+                    self.details["attributes"].append(attr)
             self.details["attributes"] = ", ".join(self.details["attributes"])
             self.log.log(LOG_PARSER, "attributes = {0}".format(self.details["attributes"]))
         else:
