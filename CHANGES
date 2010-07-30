@@ -1,6 +1,16 @@
 CHANGES
 ============================================================================
 
+Release 0.4.8 (2010-07-30)
+--------------------------
+
+[Bugfixes]
+
+  * MyFindsParser: fix changes in GS website.
+
+  * SeekParser: 'Here' compass bug.
+
+
 Release 0.4.7 (2010-07-14)
 --------------------------
 
