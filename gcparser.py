@@ -792,7 +792,7 @@ class MyFindsParser(BaseParser):
 # <td class="PageBuilderWidget"><span>Total Records: <b>5371</b> - Page: <b>1</b> of <b>269</b>
 __pcresMask["searchTotals"] = ("<td class=\"PageBuilderWidget\"><span>Total Records: <b>([0-9]+)</b> - Page: <b>[0-9]+</b> of <b>([0-9]+)</b>", re.I)
 # <img src="/images/icons/compass/NW.gif" alt="NW" />NW<br />0.19mi
-__pcresMask["listCompass"] = ("<img src=['\"]/images/icons/compass/[EWNS]+.gif['\"][^>]*>[EWNS]+<br />([0-9.]+)(ft|mi)", re.I)
+__pcresMask["listCompass"] = ("\s*<br />(Here)|\s*<img src=['\"]/images/icons/compass/[EWNS]+.gif['\"][^>]*>[EWNS]+<br />([0-9.]+)(ft|mi)", re.I)
 # <img src="/images/small_profile.gif" alt="Premium Member Only Cache" with="15" height="13" />
 __pcresMask["listPMonly"] = ("<img src=['\"]/images/small_profile.gif['\"] alt=['\"]Premium Member Only Cache['\"][^>]*>", re.I)
 # <img src="http://www.geocaching.com/images/wpttypes/794.gif" alt="Police Geocaching Squad 2007 Geocoin (1 item(s))" />
@@ -889,14 +889,17 @@ class SeekParser(BaseParser):
             if match is not None:
                 self.postData[match.group(1)] = match.group(2)
 
-            match = pcre("listCompass").search(line)
+            match = pcre("listCompass").match(line)
             if match is not None:
                 self.log.debug("NEW cache record.")
                 cache = {"PMonly":False, "items":False, "found":False}
-                if match.group(2) == "ft":
-                    cache["distance"] = float(match.group(1)) * 0.0003048
+                if match.group(1) == "Here":
+                    cache["distance"] = 0.0
                 else:
-                    cache["distance"] = float(match.group(1)) * 1.609344
+                    if match.group(3) == "ft":
+                        cache["distance"] = float(match.group(2)) * 0.0003048
+                    else:
+                        cache["distance"] = float(match.group(2)) * 1.609344
                 self.log.log(LOG_PARSER, "distance = {0:.3f}".format(cache["distance"]))
 
             if cache is not None:
