@@ -901,19 +901,7 @@ class SeekParser(BaseParser):
                 self.log.critical("LatLon needs to be float.")
             if not "dist" in data.keys() or not isinstance(data["dist"], int):
                 data["dist"] = ""
-            if data["lat"] == 0:
-                data["lat_ns"] = 1
-            else:
-                data["lat_ns"] = int(data["lat"]/abs(data["lat"]))
-            if data["lon"] == 0:
-                data["lon_ew"] = 1
-            else:
-                data["lon_ew"] = int(data["lon"]/abs(data["lon"]))
-            data["lat_mmss"] = (data["lat"] - int(abs(data["lat"])))*60
-            data["lon_mmss"] = (data["lon"] - int(abs(data["lon"])))*60
-            data["lat"] = int(abs(data["lat"]))
-            data["lon"] = int(abs(data["lon"]))
-            self.url += "lat_ns={lat_ns:d}&lat_h={lat:d}&lat_mmss={lat_mmss:.4f}&long_ew={lon_ew:d}&long_h={lon:d}&long_mmss={lon_mmss:.4f}&dist={dist}&submit8=Search".format(**data)
+            self.url += "origin_lat={lat:.5f}&origin_long={lon:.5f}&dist={dist}&submit3=Search".format(**data)
         else:
             self.log.critical("Uknown seek type.")
 
