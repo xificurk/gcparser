@@ -1,166 +1,123 @@
 CHANGES
 ============================================================================
 
+Release 0.5.0 (2010-09-23)
+--------------------------
+[Enhancements]
+  * CacheParser: add parsing of logs.
+  * SeekParser: add searching by owner, or found by user.
+
+
 Release 0.4.9 (2010-09-02)
 --------------------------
-
 [Enhancements]
-
   * CacheParser: parse more information about PMonly caches.
-
 [Bugfixes]
-
   * Reflect changes in geocaching.com website.
 
 
 Release 0.4.8 (2010-07-30)
 --------------------------
-
 [Bugfixes]
-
   * MyFindsParser: fix changes in GS website.
-
   * SeekParser: 'Here' compass bug.
 
 
 Release 0.4.7 (2010-07-14)
 --------------------------
-
 [Bugfixes]
-
   * PMonly cache parse waypoint.
 
 
 Release 0.4.6 (2010-07-01)
 --------------------------
-
 [Bugfixes]
-
   * Fix cache guid, owner id parsing.
 
 
 Release 0.4.5 (2010-06-07)
 --------------------------
-
 [Bugfixes]
-
   * Fix parsing of province, country.
 
 
 Release 0.4.4 (2010-06-06)
 --------------------------
-
 [Bugfixes]
-
   * GS webpage design update.
 
 
 Release 0.4.3 (2010-04-30)
 --------------------------
-
 [Bugfixes]
-
   * SeekParser: Make it work with latest gc.com website structure.
 
 
 Release 0.4.2 (2010-02-06)
 --------------------------
-
 [Enhancements]
-
   * CacheParser: autodetect usage of guid or waypoint (BC break!).
-
 [Bugfixes]
-
   * Fetcher: Catch only IOError exception.
 
 
 Release 0.4.1 (2010-02-05)
 --------------------------
-
 [Bugfixes]
-
   * SeekParser: cacheCount typo.
-
   * Fetcher: Catch download errors, on fail retry after few seconds.
 
 
 Release 0.4 (2010-02-01)
 --------------------------
-
 [Enhancements]
-
   * SeekParser: new parser for searching caches by coordinates.
-
 [Bugfixes]
-
   * CacheParser: parse waypoint for PM only caches.
 
 
 Release 0.3.1 (2010-01-13)
 --------------------------
-
 [Bugfixes]
-
   * Cache parser: revert changes in size data source.
 
 
 Release 0.3 (2010-01-13)
 --------------------------
-
 [Enhancements]
-
   * Better limitation of fetching from geocaching.com.
-
 [Bugfixes]
-
   * MyFinds parser: attended/webcam log types.
-
   * Cache parser: event date (thanks to Ruda Hamak).
-
   * Cache parser: login bug on PM only caches.
-
   * Cache parser: "Unknown Cache" -> "Mystery/Puzzle Cache"
-
   * GS webpage design update.
 
 
 Release 0.2 (2009-09-09)
 --------------------------
-
 [Enhancements]
-
   * EditProfile parser.
 
 
 Release 0.1.2 (2009-09-09)
 --------------------------
-
 [Bugfixes]
-
   * Better source for parsing size attribute in Cache details.
-
   * Few minor bugfixes.
 
 
 Release 0.1.1 (2009-09-07)
 --------------------------
-
 [Enhancements]
-
   * Example script.
-
   * Better Parsers handling: it is possible to register own Parser, and all
     parsers are now called via parse(name, args) method.
-
 [Bugfixes]
-
   * Few minor bugfixes.
 
 
 Release 0.1 (2009-09-05)
 --------------------------
-
 [Enhancements]
-
   * MyFinds and Cache parsers.
