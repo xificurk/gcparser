@@ -522,6 +522,9 @@ __pcresMask["cacheVisits"] = ("<span id=['\"]ctl00_ContentBody_lblFindCounts['\"
 # <img src="/images/icons/icon_smile.gif" alt="Found it" />113
 __pcresMask["cacheLogCount"] = ("<img[^>]*alt=\"([^\"]+)\"[^>]*/>([0-9]+)", re.I)
 
+__pcresMask["cacheLogs"] = ("<table class=\"LogsTable Table\">(.*?)</table>\s", re.I)
+__pcresMask["cacheLog"] = ("<tr><td[^>]*><strong><img.*?title=\"([^\"]+)\"[^>]*/>&nbsp;([a-z]+) ([0-9]+)(, ([0-9]+))? by <a[^>]*>([^<]+)</a></strong> \([0-9]+ found\)<br /><br />(.*?)<br /><br /><small><a href=\"log.aspx\?LUID=[^\"]+\" title=\"View Log\">View Log</a></small>", re.I)
+
 class CacheParser(BaseParser):
     def __init__(self, fetcher, id, logs=False):
         BaseParser.__init__(self, fetcher)
@@ -758,6 +761,20 @@ class CacheParser(BaseParser):
                     if match is not None:
                         self.details["visits"][unescape(match.group(1)).strip()] = int(match.group(2))
                 self.log.log(LOG_PARSER, "visits = {0}".format(self.details["visits"]))
+
+            self.details["logs"] = []
+            match = pcre("cacheLogs").search(self.data)
+            if match is not None:
+                for part in match.group(1).split("</tr>"):
+                    match = pcre("cacheLog").match(part)
+                    if match is not None:
+                        if match.group(5) is not None:
+                            year = match.group(5)
+                        else:
+                            year = datetime.datetime.now().year
+                        date = "{0:04d}-{1:02d}-{2:02d}".format(int(year), int(months[match.group(2)]), int(match.group(3)))
+                        self.details["logs"].append((match.group(1), date, match.group(6), match.group(7)))
+                self.log.log(LOG_PARSER, "found {0} logs".format(len(self.details["logs"])))
 
         return self.details
 
