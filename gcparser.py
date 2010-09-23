@@ -20,7 +20,7 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 """
 
-__version__ = "0.5.0"
+__version__ = "0.5.1"
 __all__ = ["GCparser", "Fetcher", "BaseParser", "CacheParser", "MyFindsParser", "SeekParser", "EditProfile", "CredentialsException", "LoginException"]
 
 
@@ -898,7 +898,7 @@ __pcresMask["listOwner"] = ("^\s*by (.*)\s*$", re.I)
 # (GC1NF8Y)<br />
 __pcresMask["listWaypoint"] = ("^\s*\((GC[0-9A-Z]+)\)<br />\s*$", re.I)
 # Hlavni mesto Praha
-__pcresMask["listLocation"] = ("^\s*(.+?)\s*$", re.I)
+__pcresMask["listLocation"] = ("^\s*(([^,.]+), )?([^.]+)\s*$", re.I)
 # 30 Oct 09<br />
 __pcresMask["listFoundDate"] = ("^\s*([0-9]+) ([A-Za-z]+) ([0-9]+)<br />\s*$", re.I)
 # 2 days ago*<br />
@@ -1069,11 +1069,16 @@ class SeekParser(BaseParser):
                     if match is not None:
                         cache["waypoint"] = match.group(1).strip()
                         self.log.log(LOG_PARSER, "waypoint = {0}".format(cache["waypoint"]))
-                elif "location" not in cache:
+                elif "country" not in cache:
                     match = pcre("listLocation").search(line)
                     if match is not None:
-                        cache["location"] = unescape(match.group(1)).strip()
-                        self.log.log(LOG_PARSER, "location = {0}".format(cache["location"]))
+                        if match.group(2) is not None:
+                            cache["province"] = unescape(match.group(2)).strip()
+                        else:
+                            cache["province"] = ""
+                        cache["country"] = unescape(match.group(3)).strip()
+                        self.log.log(LOG_PARSER, "country = {0}".format(cache["country"]))
+                        self.log.log(LOG_PARSER, "province = {0}".format(cache["province"]))
                 elif not cache["found"]:
                     match = pcre("listFoundDate").search(line)
                     if match is not None:
@@ -1095,7 +1100,7 @@ class SeekParser(BaseParser):
 
                 match = pcre("listCacheEnd").search(line)
                 if match is not None:
-                    if (self.type != "coord" or "distance" in cache) and "type" in cache and "difficulty" in cache and "size" in cache and "hidden" in cache and "name" in cache and "owner" in cache and "waypoint" in cache and "location" in cache:
+                    if (self.type != "coord" or "distance" in cache) and "type" in cache and "difficulty" in cache and "size" in cache and "hidden" in cache and "name" in cache and "owner" in cache and "waypoint" in cache and "country" in cache and "province" in cache:
                         self.log.debug("END of cache record {0}.".format(cache["name"]))
                         cacheList.append(cache)
                         cache = None
