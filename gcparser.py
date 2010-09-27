@@ -389,6 +389,9 @@ __pcresMask["HTMLp"] = ("<p[^>]*>", re.I)
 __pcresMask["HTMLbr"] = ("<br[^>]*>", re.I)
 __pcresMask["HTMLli"] = ("<li[^>]*>", re.I)
 __pcresMask["HTMLh"] = ("</?h[0-9][^>]*>", re.I)
+__pcresMask["HTMLimg_wink"] = ("<img\s+src=\s*['\"]http://www\.geocaching\.com/images/icons/icon_smile_wink\.gif['\"][^>]*>", re.I)
+__pcresMask["HTMLimg_smile"] = ("<img\s+src=\s*['\"]http://www\.geocaching\.com/images/icons/icon_smile\.gif['\"][^>]*>", re.I)
+__pcresMask["HTMLimg_smile_big"] = ("<img\s+src=\s*['\"]http://www\.geocaching\.com/images/icons/icon_smile_big\.gif['\"][^>]*>", re.I)
 __pcresMask["HTMLimgalt"] = ("<img[^>]*alt=['\"]([^'\"]+)['\"][^>]*>", re.I)
 __pcresMask["HTMLimg"] = ("<img[^>]*>", re.I)
 __pcresMask["HTMLtag"] = ("<[^>]*>", re.I)
@@ -406,6 +409,10 @@ def cleanHTML(text):
     text = pcre("HTMLli").sub("\n - ", text)
 
     text = pcre("HTMLh").sub("\n", text)
+
+    text = pcre("HTMLimg_wink").sub(" ;-) ", text)
+    text = pcre("HTMLimg_smile_big").sub(" :D ", text)
+    text = pcre("HTMLimg_smile").sub(" :-) ", text)
 
     text = pcre("HTMLimgalt").sub("[img \\1]", text)
     text = pcre("HTMLimg").sub("[img]", text)
