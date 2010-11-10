@@ -59,6 +59,9 @@ class GCparser(object):
     def parse(self, name, *args, **kwargs):
         """ Call parser of the name.
         """
+        if name not in self.parsers:
+            self.log.error("Uknown parser {0}".format(name))
+            return None
         return self.parsers[name](self.fetcher, *args, **kwargs)
 
 
@@ -436,7 +439,7 @@ unescape = HTMLParser().unescape
 """
 
 LOG_PARSER = 5
-logging.addLevelName(5, "PARSER")
+logging.addLevelName(LOG_PARSER, "PARSER")
 
 """ PCRE: geocaching.com general """
 __pcresMask["hiddenInput"] = ("<input type=[\"']hidden[\"'] name=\"([^\"]+)\"[^>]+value=\"([^\"]*)\"", re.I)
