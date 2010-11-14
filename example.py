@@ -1,38 +1,55 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-""" Import GCparser
 """
-from gcparser import GCparser
-
-""" Create GCparser class, you can also pass the third dataDir argument, then
-    GCparser will use that directory to store login cookies, and reuse them,
-    if possible.
+Import parsers, BaseParser and HTTP datasource.
 """
-gcp = GCparser("username", "secret")
+from gcparser import parsers, BaseParser, HTTPDatasource
 
-""" Let's take a look at your finds
 """
-myfinds = gcp.parse("myFinds").getList()
-print("MyFinds:")
-print(myfinds)
-
-print()
-
-""" And now, parse details about some cache, you can pass guid or waypoint.
+Create and set default datasource.
 """
-details = gcp.parse("cache", "ed5b20b7-fdca-4e59-b518-3412154d49d0").getDetails()
+BaseParser.datasource = HTTPDatasource(username="petmor", password="petmor")
+
+"""
+Create cache parser instance.
+"""
+cache = parsers["cache"]("ed5b20b7-fdca-4e59-b518-3412154d49d0")
+"""
+Now download and parse cache details. Since CacheParser is UserDict subclass
+you can access the details as dictionary.
+"""
 print("Cache:")
-print(details)
+for name, value in cache.items():
+    print("{0}\t{1}".format(name, value))
 
-""" Let's update our profile.
 """
-gcp.parse("editProfile", "Pyggs profile update test.").save()
+Create myfinds parser instance.
+"""
+myfinds = parsers["myfinds"]()
+"""
+Now download and parse myfinds. Since MyFindsParser is UserList subclass
+you can access caches as list.
+"""
+print("MyFinds ({0} caches):".format(len(myfinds)))
+for cache in myfinds:
+    print(cache)
 
-""" Let's find some caches by coordinates.
+
 """
-search = gcp.parse("seek", type="coord", data={"lat":50.084, "lon":14.434, "dist":3})
-print("Seek by coord:")
-print(search.getPageCount())
-print(search.getCacheCount())
-print(search.getList())
+Create seek parser instance.
+"""
+seek = parsers["seek"](type_="coord", data={"lat":50.084, "lon":14.434, "dist":3})
+"""
+Now download and parse list of caches. Since SeekParser is UserList subclass
+you can access caches as list.
+"""
+print("Seek ({0} in {1} pages):".format(len(seek), seek.pages))
+for cache in seek:
+    print(cache)
+
+"""
+Let's update our profile.
+"""
+from datetime import datetime
+parsers["profileedit"]("Profile edit from {0}.".format(datetime.now().isoformat())).save()

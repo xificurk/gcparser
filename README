@@ -1,6 +1,9 @@
 About
 ============================================================================
-GCparser is simple python library for parsing geocaching.com website.
+GCParser is python module for parsing geocaching.com website.
+
+Homepage:
+    http://github.com/xificurk/gcparser
 
 Author:
     Petr Morávek [Xificurk]
