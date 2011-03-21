@@ -1,6 +1,9 @@
 CHANGES
 ============================================================================
 
+Release 0.7.0 (2011-13-21)
+    [CHG] Major refactoring, see example.py for more details.
+
 Release 0.6.0 (2010-11-14)
     [ADD] HTTPDatasource: Store download stats in data_dir.
     [CHG] Major refactoring, more descriptive doc strings.
