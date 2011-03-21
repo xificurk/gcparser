@@ -1,6 +1,7 @@
 About
 ============================================================================
 GCParser is python module for parsing geocaching.com website.
+Works only with English language mutation of the website.
 
 Homepage:
     http://github.com/xificurk/gcparser

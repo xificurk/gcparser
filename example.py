@@ -2,54 +2,56 @@
 # -*- coding: utf-8 -*-
 
 """
-Import parsers, BaseParser and HTTP datasource.
+Import gcparser.
 """
-from gcparser import parsers, BaseParser, HTTPDatasource
+import gcparser
 
 """
-Create and set default datasource.
+Set user credentials for HTTP interface.
 """
-BaseParser.datasource = HTTPDatasource(username="petmor", password="petmor")
+gcparser.HTTPInterface.set_credentials(gcparser.Credentials("user", "secret"))
 
 """
-Create cache parser instance.
+Create an instance of CacheDetails
 """
-cache = parsers["cache"]("ed5b20b7-fdca-4e59-b518-3412154d49d0")
+cd = gcparser.CacheDetails()
 """
-Now download and parse cache details. Since CacheParser is UserDict subclass
-you can access the details as dictionary.
+Now download and parse some listing.
 """
 print("Cache:")
-for name, value in cache.items():
+for name, value in cd.get("ed5b20b7-fdca-4e59-b518-3412154d49d0").items():
     print("{0}\t{1}".format(name, value))
 
 """
-Create myfinds parser instance.
+Create an instance of MyGeocachingLogs.
 """
-myfinds = parsers["myfinds"]()
+mgl = gcparser.MyGeocachingLogs()
 """
-Now download and parse myfinds. Since MyFindsParser is UserList subclass
-you can access caches as list.
+Now download and parse your finds (logs of type 'Found it', 'Attended', 'Webcam Photo Taken').
 """
-print("MyFinds ({0} caches):".format(len(myfinds)))
-for cache in myfinds:
-    print(cache)
-
+finds = mgl.get_finds()
+print("Finds ({0} caches):".format(len(finds)))
+for log in finds:
+    print(log)
 
 """
 Create seek parser instance.
 """
-seek = parsers["seek"](type_="coord", data={"lat":50.084, "lon":14.434, "dist":3})
+sc = gcparser.SeekCache()
 """
-Now download and parse list of caches. Since SeekParser is UserList subclass
-you can access caches as list.
+Now download and parse sequence of caches.
 """
-print("Seek ({0} in {1} pages):".format(len(seek), seek.pages))
+seek = sc.coord(50.084, 14.434, 3)
+print("Seek ({0} caches):".format(len(seek)))
 for cache in seek:
     print(cache)
 
 """
-Let's update our profile.
+Create an instance of Profile.
+"""
+p = gcparser.Profile()
+"""
+Let's update your profile.
 """
 from datetime import datetime
-parsers["profileedit"]("Profile edit from {0}.".format(datetime.now().isoformat())).save()
+p.update("Profile edit from {0}.".format(datetime.now().isoformat()))

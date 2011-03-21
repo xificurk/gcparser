@@ -2,112 +2,173 @@
 """
 Parsing geocaching.com website.
 
-Variables:
-    parsers     --- Dictionary containing parser classes.
-
 Classes:
-    HTTPDatasource      --- Datasource retrieving data directly from
-                            geocaching.com website.
-    BaseParser          --- Define basic interface for Parser classes.
-    CacheParser         --- Parse cache details.
-    MyFindsParser       --- Parse myfinds list.
-    SeekParser          --- Parse seek query.
-    ProfileEdit         --- Profile edit.
+    HTTPInterface       --- Interface retrieving/sending data directly.
+                            from/to geocaching.com website.
+    BaseParser          --- Define common parts for all parsers.
+    CacheDetails        --- Parse cache details from webpage source.
+    MyGeocachingLogs    --- Parse and filter the list of my logs from webpage source.
+    SeekCache           --- Parse caches in seek query from webpage source.
+    Profile             --- Manage user's profile.
     CredentialsError    --- Raised on invalid credentials.
     LoginError          --- Raised when geocaching.com login fails.
-    DatasourceError     --- Raised on invalid datasource.
 
 """
 
 __author__ = "Petr Morávek (xificurk@gmail.com)"
-__copyright__ = "Copyright (C) 2009-2010 Petr Morávek"
+__copyright__ = "Copyright (C) 2009-2011 Petr Morávek"
 __license__ = "GPL"
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
-from collections import UserDict, UserList
+from collections import defaultdict, namedtuple, Sequence
 from datetime import date, datetime, timedelta
 from hashlib import md5
 from html.parser import HTMLParser
 from http.cookiejar import CookieJar, LWPCookieJar
-from logging import getLogger, addLevelName
+import logging
 import os.path
 from random import randint
 import re
 from time import time, sleep
-from unicodedata import normalize
-from urllib.parse import urlencode
-from urllib.request import build_opener, HTTPCookieProcessor
+import unicodedata
+import urllib.parse
+import urllib.request
 
-__all__ = ["parsers",
-           "HTTPDatasource",
+
+__all__ = ["HTTPInterface",
            "BaseParser",
-           "CacheParser",
-           "MyFindsParser",
-           "SeekParser",
-           "ProfileEdit",
+           "CacheDetails",
+           "MyGeocachingLogs",
+           "SeekCache",
+           "Profile",
+           "Credentials",
+           "CacheLog",
+           "LogItem",
            "CredentialsError",
-           "LoginError",
-           "DatasourceError"]
+           "LoginError"]
 
 
 ############################################################
-### Datasources.                                         ###
+### Exceptions                                           ###
 ############################################################
 
-class HTTPDatasource:
+class CredentialsError(ValueError):
     """
-    Datasource retrieving data directly from geocaching.com website.
+    Raised on invalid credentials.
+
+    """
+    pass
+
+
+class LoginError(AssertionError):
+    """
+    Raised when geocaching.com login fails.
+
+    """
+    pass
+
+
+
+############################################################
+### Data containers & design patterns                    ###
+############################################################
+
+Credentials = namedtuple("Credentials", "username password")
+CacheLog = namedtuple("CacheLog", "luid type date user user_id text")
+LogItem = namedtuple("LogItem", "luid type date cache")
+
+
+class StaticClass:
+    """
+    Raise TypeError when attempting to create an instance.
+
+    """
+
+    def __new__(cls, *p, **k):
+        raise TypeError("This class cannot be instantionalized.")
+
+
+
+############################################################
+### HTTP interface.                                      ###
+############################################################
+
+class HTTPInterface(StaticClass):
+    """
+    Interface retrieving/sending data directly from/to geocaching.com website.
+    Cannot be instantionalized.
 
     Attributes:
-        username    --- Geocaching.com username.
-        password    --- Geocaching.com password.
-        data_dir    --- Directory for storing cookies, user_agent, download
-                        stats...
-        stats       --- Dictionary with download stats of pages with auth=True.
+        stats            --- Dictionary with download stats of pages with auth=True.
         request_avg_time --- Desired average request sleep time for pages with
                              auth=True.
 
     Methods:
-        request     --- Retrive data from geocaching.com website.
-        wait        --- Called when downloading page with auth=True to lessen
-                        the load on geocaching.com website.
+        set_credentials --- Set credentials to use for geocaching.com login.
+        set_data_dir    --- Set data directory for for storing cookies,
+                            user_agent, download stats...
+        request         --- Retrive/send data from/to geocaching.com website.
+        wait            --- Handle wait time to lessen the load on geocaching.com
+                            website.
 
     """
 
+    _log = logging.getLogger("gcparser.http")
+    _data_dir = None
+    _credentials = Credentials(None, None)
+    _cookies = None
+    _user_agent = None
+    _last_download = 0
+    _first_download = 0
+    _download_count = 0
+
+    stats = defaultdict(int)
     request_avg_time = 600
 
-    def __init__(self, username=None, password=None, data_dir="~/.geocaching/parser"):
+    @classmethod
+    def set_credentials(cls, credentials):
         """
+        Set credentials to use for geocaching.com login.
+
         Arguments:
-            username    --- Geocaching.com username.
-            password    --- Geocaching.com password.
-            data_dir    --- Directory for storing cookies, user_agent, download
-                            stats...
+            credentials --- Credentials instance.
 
         """
-        self._log = getLogger("gcparser.datasource.http")
-        self.username = username
-        self.password = password
-        if username is None or password is None:
-            self._log.warn("No geocaching.com credentials given, some features will be disabled.")
-        data_dir = os.path.expanduser(data_dir)
-        if os.path.isdir(data_dir):
-            self.data_dir = data_dir
-            self._log.debug("Setting data directory to '{0}'.".format(data_dir))
+        if not isinstance(credentials, Credentials):
+            raise CredentialsError("Credentials must be an instance of Credentials.")
+        if credentials.username is None or credentials.password is None:
+            cls._log.warn("No geocaching.com credentials given, some features won't be accessible.")
+        cls._credentials = credentials
+        cls._load_stats()
+
+    @classmethod
+    def set_data_dir(cls, data_dir=None):
+        """
+        Set data directory for for storing cookies, user_agent, download stats...
+
+        Keyworded arguments:
+            data_dir    --- Path to data directory (use '~' as a link to user's
+                            home directory)
+
+        """
+        if data_dir is None:
+            cls._log.warn("No data directory provided, caching will be disabled.")
+            cls._data_dir = None
         else:
-            self._log.warn("Data directory '{0}' does not exist, caching will be disabled.".format(data_dir))
-            self.data_dir = None
-        self._cookies = None
-        self._user_agent = None
-        self._load_stats()
-        self._last_download = 0
-        self._first_download = 0
-        self._download_count = 0
+            data_dir = os.path.expanduser(data_dir)
+            if os.path.isdir(data_dir):
+                cls._log.debug("Setting data directory to '{0}'.".format(data_dir))
+                cls._data_dir = data_dir
+            else:
+                cls._log.warn("Data directory '{0}' does not exist, caching will be disabled.".format(data_dir))
+                cls._data_dir = None
+        cls._load_stats()
 
-    def request(self, url, auth=False, data=None, check=True):
+    @classmethod
+    def request(cls, url, auth=False, data=None, check=True):
         """
-        Retrive data from geocaching.com website.
+        Retrive/send data from/to geocaching.com website.
 
         Arguments:
             url         --- Webpage URL.
@@ -119,128 +180,129 @@ class HTTPDatasource:
 
         """
         if auth:
-            cookies = self._get_cookies()
-            opener = build_opener(HTTPCookieProcessor(cookies))
+            cookies = cls._get_cookies()
+            opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookies))
         else:
-            opener = build_opener()
+            opener = urllib.request.build_opener()
         headers = []
-        headers.append(("User-agent", self._get_user_agent()))
+        headers.append(("User-agent", cls._get_user_agent()))
         headers.append(("Accept", "text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8"))
         headers.append(("Accept-Language", "en-us,en;q=0.5"))
         headers.append(("Accept-Charset", "utf-8,*;q=0.5"))
         opener.addheaders = headers
+        cls.wait(auth)
+        cls._log.debug("Downloading page '{0}'.".format(url))
+        webpage = cls._download_webpage(opener, url, data)
         if auth:
-            self.wait()
-        else:
-            sleep(max(0, self._last_download + 1 - time()))
-            self._last_download = time()
-        self._log.debug("Downloading page '{0}'.".format(url))
-        webpage = self._download_webpage(opener, url, data)
-        if auth:
-            self._save_cookies()
+            cls._save_cookies()
             today = date.today().isoformat()
-            if today not in self.stats:
-                self.stats[today] = 0
-            self.stats[today] += 1
-            self._save_stats()
-        webpage = webpage.read().decode("utf8")
-        if auth and check and not self._check_login(webpage):
-            self._log.debug("We're not actually logged in, refreshing login and redownloading page.")
-            self._login()
-            return self.request(url, auth=auth, data=data)
+            cls.stats[today] += 1
+            cls._save_stats()
+        webpage = webpage.read().decode("utf-8")
+        if auth and check and not cls._check_login(webpage):
+            cls._log.debug("We're not actually logged in, refreshing login and redownloading page.")
+            cls._login()
+            return cls.request(url, auth=auth, data=data)
         return webpage
 
-    def _download_webpage(self, opener, url, data, retry=1):
+    @classmethod
+    def _download_webpage(cls, opener, url, data, retry=1):
         """ Download the page. """
         try:
             if data is not None:
-                webpage = opener.open(url, urlencode(data))
+                webpage = opener.open(url, urllib.parse.urlencode(data).encode("utf-8"))
             else:
                 webpage = opener.open(url)
         except IOError:
-            self._log.error("An error occured while downloading '{0}', will retry in {1} seconds.".format(url, retry))
+            cls._log.error("An error occured while downloading '{0}', will retry in {1} seconds.".format(url, retry))
             sleep(retry)
-            retry = min(5*retry, 600)
-            return self._download_webpage(opener, url, data, retry=retry)
+            return cls._download_webpage(opener, url, data, retry=min(5*retry, 600))
         return webpage
 
-    def _user_file_name(self):
+    @classmethod
+    def _user_file_name(cls):
         """ Returns filename to store user's data. """
-        if self.username is None or self.data_dir is None:
+        username = cls._credentials.username
+        if username is None or cls._data_dir is None:
             return None
-        hash_ = md5(self.username.encode("utf8")).hexdigest()
-        name = normalize("NFKD", self.username).encode("ascii", "ignore").decode("ascii")
+        hash_ = md5(username.encode("utf-8")).hexdigest()
+        name = unicodedata.normalize("NFKD", username).encode("ascii", "ignore").decode("ascii")
         name = _pcre("file_mask").sub("", name)
         name = name + "_" + hash_
-        return os.path.join(self.data_dir, name)
+        return os.path.join(cls._data_dir, name)
 
-    def _get_cookies(self):
+    @classmethod
+    def _get_cookies(cls):
         """ Get cookies - load from file, or create. """
-        if self._cookies is not None:
-            return self._cookies
-        user_file = self._user_file_name()
+        if cls._cookies is not None:
+            return cls._cookies
+        user_file = cls._user_file_name()
         if user_file is None:
-            self._log.debug("Cannot load cookies - invalid filename.")
-            self._cookies = CookieJar()
-            self._login()
+            cls._log.debug("Cannot load cookies - invalid filename.")
+            cls._cookies = CookieJar()
+            cls._login()
         else:
-            cookie_file = user_file + ".cookie"
+            cookie_file = user_file + ".cookies"
             if os.path.isfile(cookie_file):
-                self._log.debug("Re-using stored cookies.")
-                self._cookies = LWPCookieJar(cookie_file)
-                self._cookies.load(ignore_discard=True)
+                cls._log.debug("Re-using stored cookies.")
+                cls._cookies = LWPCookieJar(cookie_file)
+                cls._cookies.load(ignore_discard=True)
                 logged = False
-                for cookie in self._cookies:
+                for cookie in cls._cookies:
                     if cookie.name == "userid":
                         logged = True
                         break
                 if not logged:
-                    self._login()
+                    cls._login()
             else:
-                self._log.debug("No stored cookies, creating new.")
-                self._cookies = LWPCookieJar(cookie_file)
-                self._login()
-        return self._cookies
+                cls._log.debug("No stored cookies, creating new.")
+                cls._cookies = LWPCookieJar(cookie_file)
+                cls._login()
+        return cls._cookies
 
-    def _save_cookies(self):
+    @classmethod
+    def _save_cookies(cls):
         """ Try to save cookies, if possible. """
-        if isinstance(self._cookies, LWPCookieJar):
-            self._log.debug("Saving cookies.")
-            self._cookies.save(ignore_discard=True, ignore_expires=True)
+        if isinstance(cls._cookies, LWPCookieJar):
+            cls._log.debug("Saving cookies.")
+            cls._cookies.save(ignore_discard=True, ignore_expires=True)
 
-    def _get_user_agent(self):
+    @classmethod
+    def _get_user_agent(cls):
         """ Return current user_agent, or load from file, or generate random one. """
-        if self._user_agent is not None:
-            return self._user_agent
-        user_file = self._user_file_name()
+        if cls._user_agent is not None:
+            return cls._user_agent
+        user_file = cls._user_file_name()
         if user_file is None:
-            self._user_agent = self._generate_user_agent()
+            cls._user_agent = cls._generate_user_agent()
         else:
             ua_file = user_file + ".ua"
             if os.path.isfile(ua_file):
-                with open(ua_file, "r", encoding="utf8") as fp:
-                    self._log.debug("Loading user agent.")
-                    self._user_agent = fp.read()
+                with open(ua_file, "r", encoding="utf-8") as fp:
+                    cls._log.debug("Loading user agent.")
+                    cls._user_agent = fp.read()
             else:
-                self._user_agent = self._generate_user_agent()
-                self._save_user_agent()
-        return self._user_agent
+                cls._user_agent = cls._generate_user_agent()
+                cls._save_user_agent()
+        return cls._user_agent
 
-    def _save_user_agent(self):
+    @classmethod
+    def _save_user_agent(cls):
         """ Try to save user agent, if possible. """
-        if self._user_agent is None:
+        if cls._user_agent is None:
             return
-        user_file = self._user_file_name()
+        user_file = cls._user_file_name()
         if user_file is None:
             return
         ua_file = user_file + ".ua"
-        with open(ua_file, "w", encoding="utf8") as fp:
-            self._log.debug("Saving user agent.")
-            fp.write(self._user_agent)
+        with open(ua_file, "w", encoding="utf-8") as fp:
+            cls._log.debug("Saving user agent.")
+            fp.write(cls._user_agent)
 
-    def _generate_user_agent(self):
+    @classmethod
+    def _generate_user_agent(cls):
         """ Generate random user_agent string - masking as Firefox 3.0.x. """
-        self._log.debug("Generating user agent.")
+        cls._log.debug("Generating user agent.")
         system = randint(1, 5)
         if system <= 1:
             system = "X11"
@@ -256,18 +318,19 @@ class HTTPDatasource:
         date = "200907{0:02d}{1:02d}".format(randint(1, 31), randint(1, 23))
         return "Mozilla/5.0 ({0}; U; {1}; en-US; rv:1.9.0.{2:d}) Gecko/{3} Firefox/3.0.{2:d}".format(system, system_version, version, date)
 
-    def _load_stats(self):
+    @classmethod
+    def _load_stats(cls):
         """ Load download stats from file. """
-        user_file = self._user_file_name()
+        cls.stats = defaultdict(int)
+        user_file = cls._user_file_name()
         if user_file is None:
             return
-        self.stats = {}
         stats_file = user_file + ".stats"
         if os.path.isfile(stats_file):
             today = date.today()
             timeout = today - timedelta(days=93)
-            with open(stats_file, "r", encoding="utf8") as fp:
-                self._log.debug("Loading stats.")
+            with open(stats_file, "r", encoding="utf-8") as fp:
+                cls._log.debug("Loading stats.")
                 for line in fp.readlines():
                     line = line.strip()
                     if not line:
@@ -277,89 +340,101 @@ class HTTPDatasource:
                     download_date = date(int(download_date[0]), int(download_date[1]), int(download_date[2]))
                     download_count = int(line[1])
                     if download_date > timeout:
-                        self.stats[download_date.isoformat()] = download_count
+                        cls.stats[download_date.isoformat()] = download_count
 
-    def _save_stats(self):
+    @classmethod
+    def _save_stats(cls):
         """ Try to save stats, if possible. """
-        user_file = self._user_file_name()
+        user_file = cls._user_file_name()
         if user_file is None:
             return
         stats_file = user_file + ".stats"
-        with open(stats_file, "w", encoding="utf8") as fp:
-            self._log.debug("Saving stats.")
-            for download_date, download_count in self.stats.items():
-                fp.write("{0}\t{1}".format(download_date, download_count))
+        with open(stats_file, "w", encoding="utf-8") as fp:
+            cls._log.debug("Saving stats.")
+            for download_date, download_count in cls.stats.items():
+                fp.write("{0}\t{1}\n".format(download_date, download_count))
 
-    def _login(self):
+    @classmethod
+    def _login(cls):
         """ Log in to geocaching.com, save cookiejar. """
-        if not self._login_attempt():
-            self._log.debug("Not logged in, re-trying.")
-            if not self._login_attempt():
-                self._log.critical("Login error.")
+        if not cls._login_attempt():
+            cls._log.debug("Not logged in, re-trying.")
+            if not cls._login_attempt():
+                cls._log.critical("Login error.")
                 raise LoginError
-        self._log.debug("Logged in.")
+        cls._log.debug("Logged in.")
 
-    def _login_attempt(self):
+    @classmethod
+    def _login_attempt(cls):
         """ Attempt to log in to geocaching.com. """
-        self._log.debug("Attempting to log in.")
-        if self.username is None or self.password is None:
-            self._log.critical("Cannot log in - no credentials available.")
-            raise CredentialsError
-        webpage = self.request("http://www.geocaching.com/", auth=True, check=False)
+        cls._log.debug("Attempting to log in.")
+        if cls._credentials.username is None or cls._credentials.password is None:
+            raise CredentialsError("Cannot log in - no credentials available.")
+        webpage = cls.request("http://www.geocaching.com/", auth=True, check=False)
         data = {}
-        data["ctl00$MiniProfile$loginUsername"] = self.username
-        data["ctl00$MiniProfile$loginPassword"] = self.password
-        data["ctl00$MiniProfile$LoginBtn"] = "Go"
+        data["ctl00$MiniProfile$loginUsername"] = cls._credentials.username
+        data["ctl00$MiniProfile$loginPassword"] = cls._credentials.password
+        data["ctl00$MiniProfile$LoginBtn"] = "Login"
         data["ctl00$MiniProfile$uxRememberMe"] = "on"
+        data["ctl00$ContentBody$GCCode"] = "GC"
+        data["ctl00$ContentBody$saddress"] = "98103"
         for hidden_input in _pcre("hidden_input").findall(webpage):
             data[hidden_input[0]] = hidden_input[1]
-        webpage = self.request("http://www.geocaching.com/Default.aspx", data=data, auth=True, check=False)
-        for cookie in self._cookies:
-            self._log.debug("{0}: {1}".format(cookie.name, cookie.value))
+        webpage = cls.request("http://www.geocaching.com/Default.aspx", data=data, auth=True, check=False)
+        for cookie in cls._cookies:
+            cls._log.debug("{0}: {1}".format(cookie.name, cookie.value))
             if cookie.name == "userid":
                 return True
         return False
 
-    def _check_login(self, data):
+    @classmethod
+    def _check_login(cls, data):
         """ Checks the downloaded data and determines if we're logged in. """
-        self._log.debug("Checking if we're really logged in...")
+        cls._log.debug("Checking if we're really logged in...")
         if data is not None:
             for line in data.splitlines():
-                if line.find("Sorry, the owner of this listing has made it viewable to Premium Members only") != -1:
-                    self._log.debug("PM only cache.")
-                    return True
                 if line.find("You are not logged in.") != -1:
                     return False
         return True
 
-    def wait(self):
+    @classmethod
+    def wait(cls, auth):
         """
-        Called when downloading page with auth=True to lessen the load on
-        geocaching.com website.
+        Handle wait time to lessen the load on geocaching.com website.
+
+        Arguments:
+            auth        --- Is this for a page where autentication is needed?
 
         """
-        # No request for a long time => reset _first_download value using desired average.
-        self._first_download = max(time() - self._download_count * self.request_avg_time, self._first_download)
-        # Calculate count
-        count = self._download_count - int((time() - self._first_download) / self.request_avg_time)
-        # sleep time 1s: 10/10s => overall 10/10s
-        if count < 10:
+        if not auth:
             sleep_time = 1
-        # sleep time 2-8s: 40/3.3m => overall 50/3.5min
-        elif count < 50:
-            sleep_time = randint(2, 8)
-        # sleep time 5-35s: 155/51.6m => overall 205/55.1min
-        elif count < 200:
-            sleep_time = randint(5, 35)
-        # sleep time 10-50s: 315/2.6h => overall 520/3.5h
-        elif count < 500:
-            sleep_time = randint(10, 50)
-        # sleep time 20-80s
         else:
-            sleep_time = randint(20, 80)
-        sleep(max(0, self._last_download + sleep_time - time()))
-        self._download_count = self._download_count + 1
-        self._last_download = time()
+            # No request for a long time => reset _first_download value using desired average.
+            cls._first_download = max(time() - cls._download_count * cls.request_avg_time, cls._first_download)
+            # Calculate number of downloaded pages ahead of expected average
+            count = cls._download_count - int((time() - cls._first_download) / cls.request_avg_time)
+            # sleep time 1s: 10/10s => overall 10/10s
+            if count < 10:
+                sleep_time = 1
+            # sleep time 2-8s: 40/3.3m => overall 50/3.5min
+            elif count < 50:
+                sleep_time = randint(2, 8)
+            # sleep time 5-35s: 155/51.6m => overall 205/55.1min
+            elif count < 200:
+                sleep_time = randint(5, 35)
+            # sleep time 10-50s: 315/2.6h => overall 520/3.5h
+            elif count < 500:
+                sleep_time = randint(10, 50)
+            # sleep time 20-80s
+            else:
+                sleep_time = randint(20, 80)
+            cls._download_count += 1
+        cls._log.debug("Waiting for {0} seconds.".format(sleep_time))
+        sleep(max(0, cls._last_download + sleep_time - time()))
+        cls._last_download = time()
+
+
+HTTPInterface.set_data_dir("~/.geocaching/parser")
 
 
 
@@ -412,10 +487,10 @@ _pcre_masks = {}
 def _pcre(name):
     """ Return compiled PCRE. """
     if name not in _pcre_masks:
-        getLogger("gcparser.helpers").error("Uknown PCRE '{0}'.".format(name))
+        logging.getLogger("gcparser.helpers").error("Uknown PCRE '{0}'.".format(name))
         name = "null"
     if name not in _pcres:
-        _pcres[name] = re.compile(_pcre_masks[name][0], _pcre_masks[name][1])
+        _pcres[name] = re.compile(*_pcre_masks[name])
     return _pcres[name]
 
 ########################################
@@ -425,7 +500,7 @@ _pcre_masks["null"] = (".*", 0)
 _pcre_masks["file_mask"] = ("[^a-zA-Z0-9._-]+", re.A)
 
 ########################################
-# PCRE: System.                        #
+# PCRE: HTML.                        #
 ########################################
 _pcre_masks["HTMLp"] = ("<p[^>]*>", re.I)
 _pcre_masks["HTMLbr"] = ("<br[^>]*>", re.I)
@@ -447,7 +522,7 @@ _pcre_masks["double_space"] = ("\s\s+", 0)
 ############################################################
 
 LOG_PARSER = 5
-addLevelName(LOG_PARSER, "PARSER")
+logging.addLevelName(LOG_PARSER, "PARSER")
 
 ########################################
 # BaseParser.                          #
@@ -458,41 +533,26 @@ _pcre_masks["guid"] = ("^[a-z0-9]+-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+$", re
 
 class BaseParser:
     """
-    Define basic interface for Parser classes.
+    Define common parts for all parsers.
 
     Attributes:
-        datasource  --- Datasource instance.
+        http        --- Object with 'request' method for retrieving/sending data.
 
     """
 
-    datasource = None
+    http = HTTPInterface
 
-    def __init__(self, datasource=None):
-        """
-        Keyworded arguments:
-            datasource  --- Datasource instance, or None.
-
-        """
-        if datasource is not None:
-            self.datasource = datasource
-        self._log.debug("Using datasource {0}.".format(self.datasource))
-        self._data = None
+    def __init__(self):
         if hasattr(self, "_log"):
             self._log.log_parser = lambda x: self._log.log(LOG_PARSER, x)
 
-    def _load(self, url, auth=False, data=None):
-        """ Loads data from webpage. """
-        if self.datasource is None:
-            raise DatasourceError()
-        if self._data is None:
-            self._data = self.datasource.request(url, auth=auth, data=data)
 
 ########################################
-# CacheParser                          #
+# CacheDetails                         #
 ########################################
 _pcre_masks["waypoint"] = ("GC[A-Z0-9]+", 0)
 # The owner of <strong>The first Czech premium member cache</strong> has chosen to make this cache listing visible to Premium Members only.
-_pcre_masks["PMonly"] = ("<img [^>]*alt=['\"]Premium Members only['\"][^>]*/>\s*The owner of <strong>\s*([^<]+)\s*</strong> has chosen to make this cache listing visible to Premium Members only.", re.I)
+_pcre_masks["PMonly"] = ("<img [^>]*alt=['\"]Premium Members only['\"][^>]*/>\s*The owner of <strong>\s*([^<]+)\s*</strong> has chosen to make this cache listing visible to Premium Members only\.", re.I)
 # <span id="ctl00_ContentBody_uxCacheType">A cache by Pc-romeo</span>
 _pcre_masks["PMowner"] = ("<span[^>]*>\s*A cache by ([^<]+)\s*</span>", re.I)
 # <img src="/images/icons/container/regular.gif" alt="Size: Regular" />&nbsp<small>(Regular)</small>
@@ -505,10 +565,14 @@ _pcre_masks["PMdifficulty"] = ("<strong><span[^>]*>Difficulty:</span></strong>\s
 _pcre_masks["PMterrain"] = ("<strong><span[^>]*>Terrain:</span></strong>\s*<img [^>]*alt=['\"]([0-9.]+) out of 5['\"][^>]*/>", re.I)
 # <img id="ctl00_ContentBody_uxWptTypeImage" src="http://www.geocaching.com/images/wpttypes/2.gif" style="border-width:0px;vertical-align:middle" />
 _pcre_masks["PMcache_type"] = ("<img id=['\"]ctl00_ContentBody_uxWptTypeImage['\"] src=['\"][^'\"]*/images/wpttypes/(earthcache|mega|[0-9]+).gif['\"][^>]*>", re.I)
+# <p class="Warning">This is a Premium Member Only cache.</p>
+_pcre_masks["cache_pm"] = ("<p class=['\"]Warning['\"]>This is a Premium Member Only cache\.</p>", re.I)
+# <span class="favorite-value">8</span>
+_pcre_masks["cache_favorites"] = ("<span class=['\"]favorite-value['\"][^>]*>([0-9]+)</span>", re.I)
 # <meta name="description" content="Pendulum - Prague Travel Bug Hotel (GCHCE0) was created by Saman on 12/23/2003. It&#39;s a Regular size geocache, with difficulty of 2, terrain of 2.5. It&#39;s located in Hlavni mesto Praha, Czech Republic. Literary - kinetic cache with the superb view of the Praguepanorama. A suitable place for the incoming and outgoing travelbugs." />
 _pcre_masks["cache_details"] = ("<meta\s+name=\"description\" content=\"([^\"]+) \(GC[A-Z0-9]+\) was created by ([^\"]+) on ([0-9]+)/([0-9]+)/([0-9]+)\. It('|(&#39;))s a ([a-zA-Z ]+) size geocache, with difficulty of ([0-9.]+), terrain of ([0-9.]+). It('|(&#39;))s located in (([^,.]+), )?([^.]+)\.[^\"]*\"[^>]*>", re.I|re.S)
 # <a href="/about/cache_types.aspx" target="_blank" title="About Cache Types"><img src="/images/WptTypes/8.gif" alt="Unknown Cache" width="32" height="32" />
-_pcre_masks["cache_type"] = ("<img src=['\"]/images/WptTypes/[^'\"]+['\"] alt=\"([^\"]+)\"[^>]*></a>", re.I)
+_pcre_masks["cache_type"] = ("<img src=['\"](http://www\.geocaching\.com)?/images/WptTypes/[^'\"]+['\"] alt=\"([^\"]+)\"[^>]*></a>", re.I)
 # by <a href="http://www.geocaching.com/profile/?guid=ed7a2040-3bbb-485b-9b03-21ae8507d2d7&wid=92322d1b-d354-4190-980e-8964d7740161&ds=2">
 _pcre_masks["cache_owner_id"] = ("by <a href=['\"]http://www\.geocaching\.com/profile/\?guid=([a-z0-9]+-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+)&wid=([a-z0-9]+-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+)&ds=2['\"][^>]*>", re.I)
 # <p class="OldWarning"><strong>Cache Issues:</strong></p><ul class="OldWarning"><li>This cache is temporarily unavailable. Read the logs below to read the status for this cache.</li></ul></span>
@@ -560,94 +624,81 @@ _pcre_masks["cache_inventory_item"] = ("<a href=['\"][^'\"]*/track/details\.aspx
 _pcre_masks["cache_visits"] = ("<span id=['\"]ctl00_ContentBody_lblFindCounts['\"][^>]*><p[^>]*>(.*?)</p></span>", re.I)
 # <img src="/images/icons/icon_smile.gif" alt="Found it" />113
 _pcre_masks["cache_log_count"] = ("<img[^>]*alt=\"([^\"]+)\"[^>]*/>([0-9]+)", re.I)
-_pcre_masks["cache_logs"] = ("<table class=\"LogsTable Table\">(.*?)</table>\s", re.I)
-_pcre_masks["cache_log"] = ("<tr><td[^>]*><strong><img.*?title=['\"]([^\"']+)['\"][^>]*/>&nbsp;([a-z]+) ([0-9]+)(, ([0-9]+))? by <a[^>]*>([^<]+)</a></strong>(&nbsp;| )\([0-9]+ found\)<br\s*/><br\s*/>(.*?)<br\s*/><br\s*/><small><a href=['\"]log.aspx\?LUID=[^\"]+['\"] title=['\"]View Log['\"]>View Log</a></small>", re.I)
+_pcre_masks["cache_logs"] = ("<table class=\"LogsTable Table\">(.*?)</table>\s+<p>", re.I|re.S)
+_pcre_masks["cache_log"] = ("<tr><td[^>]*><strong><img.*?title=['\"]([^\"']+)['\"][^>]*/>&nbsp;([a-z]+) ([0-9]+)(, ([0-9]+))? by <a href=['\"](http://www\.geocaching\.com)?/profile/\?guid=([a-z0-9]+-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+)['\"][^>]*>([^<]+)</a></strong>(&nbsp;| )\([0-9]+ found\)<br\s*/><br\s*/>(.*?)<br\s*/><br\s*/><small><a href=['\"]log.aspx\?LUID=([a-z0-9-]+)['\"] title=['\"]View Log['\"]>View Log</a></small>", re.I|re.S)
 
 
-class CacheParser(BaseParser, UserDict):
+class CacheDetails(BaseParser):
     """
-    Parse cache details.
-
-    Subclass of UserDict.
+    Parse cache details from webpage source.
 
     Attributes:
-        details     --- Dictionary with cache details.
+        logs        --- Whether to return complete list of logs by default.
 
     Methods:
-        get_details --- Parse and return cache details.
+        get         --- Get cache details as dictionary by guid or waypoint.
 
     """
 
-    def __init__(self, id_, logs=False, datasource=None):
+    _url = "http://www.geocaching.com/seek/cache_details.aspx?decrypt=y"
+
+    logs = False
+
+    def __init__(self, logs=False):
         """
+        Keyworded arguments:
+            logs        --- Whether to return complete list of logs by default.
+
+        """
+        self._log = logging.getLogger("gcparser.parser.CacheDetails")
+        self.logs = logs
+        BaseParser.__init__(self)
+
+    def get(self, id_, logs=None):
+        """
+        Get cache details by guid or waypoint.
+
         Arguments:
             id_         --- Geocache waypoint or guid.
 
         Keyworded arguments:
             logs        --- Download complete list of logs.
-            datasource  --- Datasource instance, or None.
 
         """
-        self._log = getLogger("gcparser.parser.cache")
-        BaseParser.__init__(self, datasource=datasource)
-        self._id = id_
+        if logs is None:
+            logs = self.logs
         if _pcre("guid").match(id_) is not None:
-            self._type = "guid"
+            type_ = "guid"
         else:
-            self._type = "waypoint"
-        self._url = "http://www.geocaching.com/seek/cache_details.aspx?decrypt=y"
-        if self._type == "guid":
-            self._url = self._url + "&guid=" + self._id
-        else:
-            self._url = self._url + "&wp=" + self._id
+            type_ = "wp"
+        url = self._url + "&{0}={1}".format(type_, id_)
         if logs:
-            self._url = self._url + "&log=y"
-        self._details = None
+            url = url + "&log=y"
+        data = self.http.request(url, auth=True)
 
-    def _load(self):
-        """ Loads data from webpage. """
-        BaseParser._load(self, self._url, auth=True)
-
-    @property
-    def data(self):
-        return self.details
-
-    @property
-    def details(self):
-        """ Dictionary with cache details. """
-        if self._details is None:
-            self._details = self.get_details()
-        return self._details
-
-    def get_details(self):
-        """
-        Parse and return cache details.
-
-        """
-        self._load()
         details = {}
-        if self._type == "guid":
-            details["guid"] = self._id
+        if type_ == "guid":
+            details["guid"] = id_
         else:
-            details["waypoint"] = self._id
+            details["waypoint"] = id_
 
-        match = _pcre("waypoint").search(self._data)
+        match = _pcre("waypoint").search(data)
         if match is not None:
             details["waypoint"] = match.group(0)
             self._log.log_parser("waypoint = {0}".format(details["waypoint"]))
         else:
-            details["waypoint"] = ""
+            details["waypoint"] = "GC"
             self._log.error("Waypoint not found.")
 
-        match = _pcre("PMonly").search(self._data)
+        match = _pcre("PMonly").search(data)
         if match is not None:
             details["PMonly"] = True
-            self._log.warn("PM only cache at '{0}'.".format(self._url))
+            self._log.warn("PM only cache at '{0}'.".format(url))
 
             details["name"] = _unescape(match.group(1)).strip()
             self._log.log_parser("name = {0}".format(details["name"]))
 
-            match = _pcre("PMowner").search(self._data)
+            match = _pcre("PMowner").search(data)
             if match is not None:
                 details["owner"] = _unescape(match.group(1)).strip()
                 self._log.log_parser("owner = {0}".format(details["owner"]))
@@ -655,7 +706,7 @@ class CacheParser(BaseParser, UserDict):
                 details["owner"] = ""
                 self._log.error("Could not parse cache owner.")
 
-            match = _pcre("PMsize").search(self._data)
+            match = _pcre("PMsize").search(data)
             if match is not None:
                 details["size"] = match.group(1).strip()
                 self._log.log_parser("size = {0}".format(details["size"]))
@@ -663,7 +714,7 @@ class CacheParser(BaseParser, UserDict):
                 details["size"] = ""
                 self._log.error("Could not parse cache size.")
 
-            match = _pcre("PMdifficulty").search(self._data)
+            match = _pcre("PMdifficulty").search(data)
             if match is not None:
                 details["difficulty"] = float(match.group(1))
                 self._log.log_parser("difficulty = {0:.1f}".format(details["difficulty"]))
@@ -671,7 +722,7 @@ class CacheParser(BaseParser, UserDict):
                 details["difficulty"] = 0
                 self._log.error("Could not parse cache difficulty.")
 
-            match = _pcre("PMterrain").search(self._data)
+            match = _pcre("PMterrain").search(data)
             if match is not None:
                 details["terrain"] = float(match.group(1))
                 self._log.log_parser("terrain = {0:.1f}".format(details["terrain"]))
@@ -679,7 +730,7 @@ class CacheParser(BaseParser, UserDict):
                 details["terrain"] = 0
                 self._log.error("Could not parse cache terrain.")
 
-            match = _pcre("PMcache_type").search(self._data)
+            match = _pcre("PMcache_type").search(data)
             if match is not None and match.group(1) in _cache_types:
                 details["type"] = _cache_types[match.group(1)]
                 self._log.log_parser("type = {0}".format(details["type"]))
@@ -687,9 +738,9 @@ class CacheParser(BaseParser, UserDict):
                 details["type"] = ""
                 self._log.error("Type not found.")
         else:
-            details["PMonly"] = False
+            details["PMonly"] = _pcre("cache_pm").search(data) is not None
 
-            match = _pcre("cache_details").search(self._data)
+            match = _pcre("cache_details").search(data)
             if match is not None:
                 details["name"] = _unescape(_unescape(match.group(1))).strip()
                 details["owner"] = _unescape(_unescape(match.group(2))).strip()
@@ -719,9 +770,9 @@ class CacheParser(BaseParser, UserDict):
                 details["terrain"] = 0
                 self._log.error("Could not parse cache details.")
 
-            match = _pcre("cache_type").search(self._data)
+            match = _pcre("cache_type").search(data)
             if match is not None:
-                details["type"] = _unescape(match.group(1)).strip()
+                details["type"] = _unescape(match.group(2)).strip()
                 # GS weird changes bug
                 if details["type"] == "Unknown Cache":
                     details["type"] = "Mystery/Puzzle Cache"
@@ -730,7 +781,7 @@ class CacheParser(BaseParser, UserDict):
                 details["type"] = ""
                 self._log.error("Type not found.")
 
-            match = _pcre("cache_owner_id").search(self._data)
+            match = _pcre("cache_owner_id").search(data)
             if match is not None:
                 details["owner_id"] = match.group(1)
                 details["guid"] = match.group(2)
@@ -745,7 +796,7 @@ class CacheParser(BaseParser, UserDict):
 
             details["disabled"] = 0
             details["archived"] = 0
-            match = _pcre("disabled").search(self._data)
+            match = _pcre("disabled").search(data)
             if match is not None:
                 if match.group(1) == "has been archived":
                     details["archived"] = 1
@@ -753,7 +804,15 @@ class CacheParser(BaseParser, UserDict):
                 self._log.log_parser("archived = {0}".format(details["archived"]))
                 self._log.log_parser("disabled = {0}".format(details["disabled"]))
 
-            match = _pcre("cache_coords").search(self._data)
+            match = _pcre("cache_favorites").search(data)
+            if match is not None:
+                details["favorites"] = int(match.group(1))
+                self._log.log_parser("favorites = {0}".format(details["favorites"]))
+            else:
+                details["favorites"] = 0
+                self._log.error("Favorites count not found.")
+
+            match = _pcre("cache_coords").search(data)
             if match is not None:
                 details["lat"] = float(match.group(2)) + float(match.group(3))/60
                 if match.group(1) == "S":
@@ -768,7 +827,7 @@ class CacheParser(BaseParser, UserDict):
                 details["lon"] = 0
                 self._log.error("Lat, lon not found.")
 
-            match = _pcre("cache_shortDesc").search(self._data)
+            match = _pcre("cache_shortDesc").search(data)
             if match is not None:
                 details["shortDescHTML"] = match.group(1)
                 details["shortDesc"] = _clean_HTML(match.group(1))
@@ -777,7 +836,7 @@ class CacheParser(BaseParser, UserDict):
                 details["shortDescHTML"] = ""
                 details["shortDesc"] = ""
 
-            match = _pcre("cache_longDesc").search(self._data)
+            match = _pcre("cache_longDesc").search(data)
             if match is not None:
                 details["longDescHTML"] = match.group(1)
                 details["longDesc"] = _clean_HTML(match.group(1))
@@ -786,14 +845,14 @@ class CacheParser(BaseParser, UserDict):
                 details["longDescHTML"] = ""
                 details["longDesc"] = ""
 
-            match = _pcre("cache_hint").search(self._data)
+            match = _pcre("cache_hint").search(data)
             if match is not None:
                 details["hint"] = _unescape(match.group(1).replace("<br>", "\n")).strip()
                 self._log.log_parser("hint = {0}...".format(details["hint"].replace("\n"," ")[0:50]))
             else:
                 details["hint"] = ""
 
-            match = _pcre("cache_attributes").search(self._data)
+            match = _pcre("cache_attributes").search(data)
             if match is not None:
                 details["attributes"] = []
                 for item in _pcre("cache_attributes_item").finditer(match.group(1)):
@@ -806,7 +865,7 @@ class CacheParser(BaseParser, UserDict):
                 details["attributes"] = ""
 
             details["inventory"] = {}
-            match = _pcre("cache_inventory").search(self._data)
+            match = _pcre("cache_inventory").search(data)
             if match is not None:
                 for part in match.group(1).split("</li>"):
                     match = _pcre("cache_inventory_item").search(part)
@@ -815,7 +874,7 @@ class CacheParser(BaseParser, UserDict):
                 self._log.log_parser("inventory = {0}".format(details["inventory"]))
 
             details["visits"] = {}
-            match = _pcre("cache_visits").search(self._data)
+            match = _pcre("cache_visits").search(data)
             if match is not None:
                 for part in match.group(1).split("&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"):
                     match = _pcre("cache_log_count").search(part)
@@ -824,7 +883,7 @@ class CacheParser(BaseParser, UserDict):
                 self._log.log_parser("visits = {0}".format(details["visits"]))
 
             details["logs"] = []
-            match = _pcre("cache_logs").search(self._data)
+            match = _pcre("cache_logs").search(data)
             if match is not None:
                 for part in match.group(1).split("</tr>"):
                     match = _pcre("cache_log").match(part)
@@ -834,559 +893,396 @@ class CacheParser(BaseParser, UserDict):
                         else:
                             year = datetime.now().year
                         log_date = "{0:04d}-{1:02d}-{2:02d}".format(int(year), int(_months_full[match.group(2)]), int(match.group(3)))
-                        details["logs"].append((match.group(1), log_date, match.group(6), match.group(8)))
+                        details["logs"].append(CacheLog(match.group(11), match.group(1), log_date, match.group(8), match.group(7), match.group(10)))
                 self._log.log_parser("Found {0} logs.".format(len(details["logs"])))
 
         return details
 
 
-
 ########################################
-# MyFindsParser                        #
+# MyGeocachingLogs                     #
 ########################################
-# <img src="/images/icons/icon_smile.gif" width="16" height="16" alt="Found it" />
-_pcre_masks["logs_found"] = ("\s*<img[^>]*(Found it|Webcam Photo Taken|Attended)[^>]*>", re.I)
-# 7/23/2008
-_pcre_masks["logs_date"] = ("\s*([0-9]+)/([0-9]+)/([0-9]+)", re.I)
+#<tr class="">
+#<td>
+#<img src="/images/icons/icon_smile.gif" width="16" height="16" alt="Found it" />
+#</td>
+#<td>
+#</td>
+#<td>
+#12/29/2010
+#</td>
+#<td>
+#<a href="http://www.geocaching.com/seek/cache_details.aspx?guid=e78fd364-18f4-48dd-98c1-a8af910dfe76" class="ImageLink"><img src="http://www.geocaching.com/images/wpttypes/sm/2.gif" title="Traditional Cache" /></a> <a href="http://www.geocaching.com/seek/cache_details.aspx?guid=e78fd364-18f4-48dd-98c1-a8af910dfe76">Hradiste Zamka</a>&nbsp;
+#</td>
+#<td>
+#Hlavni mesto Praha, Czech Republic
+#&nbsp;
+#</td>
+#<td>
+#<a href="http://www.geocaching.com/seek/log.aspx?LUID=af2e28fa-e12e-4d2b-b6b1-64a2441996e3" target="_blank" title="Visit Log">Visit Log</a>
+#</td>
+#</tr>
+_pcre_masks["logs_item"] = ("<tr[^>]*>\s*<td[^>]*>\s*<img [^>]*alt=\"([^\"]+)\"[^>]*>\s*</td>\s*<td[^>]*>.*?</td>\s*<td[^>]*>\s*([0-9]+)/([0-9]+)/([0-9]+)\s*</td>\s*<td[^>]*>\s*(<a[^>]*>)?\s*<img src=['\"](http://www\.geocaching\.com)?/images/wpttypes/[^'\"]+['\"][^>]*title=\"([^\"]+)\"[^>]*>\s*(</a>)?\s*<a href=['\"](http://www\.geocaching\.com)?/seek/cache_details.aspx\?guid=([a-z0-9-]+)['\"][^>]*>\s*(<span class=['\"]Strike(\s*OldWarning)?['\"]>)?\s*([^<]+)\s*(</span>)?\s*</a>[^<]*</td>\s*<td[^<]*>\s*(([^,<]+), )?([^<]+?)(\s*&nbsp;)?\s*</td>\s*<td[^<]*>\s*<a href=['\"][^'\"]*/seek/log\.aspx\?LUID=([a-z0-9-]+)['\"][^>]*>Visit Log</a>\s*</td>\s*</tr>", re.I|re.S)
 # <a href="http://www.geocaching.com/seek/cache_details.aspx?guid=331f0c62-ef78-4ab3-b8d7-be569246771d" class="ImageLink"><img src="http://www.geocaching.com/images/wpttypes/sm/2.gif" title="Traditional Cache" /></a> <a href="http://www.geocaching.com/seek/cache_details.aspx?guid=331f0c62-ef78-4ab3-b8d7-be569246771d">Stepankovi hrosi</a>&nbsp;
 # <a href="http://www.geocaching.com/seek/cache_details.aspx?guid=d3e80a41-4218-4136-bb63-ac0de3ef0b5a" class="ImageLink"><img src="http://www.geocaching.com/images/wpttypes/sm/8.gif" title="Unknown Cache" /></a> <a href="http://www.geocaching.com/seek/cache_details.aspx?guid=d3e80a41-4218-4136-bb63-ac0de3ef0b5a"><span class="Strike">Barva Kouzel</span></a>&nbsp;
 # <a href="http://www.geocaching.com/seek/cache_details.aspx?guid=29444383-4607-4e2d-bc65-bcf2e9919e5d" class="ImageLink"><img src="http://www.geocaching.com/images/wpttypes/sm/2.gif" title="Traditional Cache" /></a> <a href="http://www.geocaching.com/seek/cache_details.aspx?guid=29444383-4607-4e2d-bc65-bcf2e9919e5d"><span class="Strike OldWarning">Krizovatka na kopci / Crossroad on a hill</span></a>&nbsp;
-_pcre_masks["logs_name"] = ("\s*<a[^>]*>\s*<img[^>]*>\s*</a>\s*<a href=['\"][^'\"]*/seek/cache_details.aspx\?guid=([a-z0-9-]+)['\"][^>]*>\s*(<span class=['\"]Strike(\s*OldWarning)?['\"]>)?\s*([^<]+)\s*(</span>)?\s*</a>", re.I)
-# <a href="http://www.geocaching.com/seek/log.aspx?LUID=a3e234b3-7d34-4a26-bde5-487e4297133c" target="_blank" title="Visit Log">Visit Log</a>
-_pcre_masks["logs_log"] = ("\s*<a href=['\"][^'\"]*/seek/log.aspx\?LUID=([a-z0-9-]+)['\"][^>]*>Visit Log</a>", re.I)
+# <a href="http://www.geocaching.com/seek/log.aspx?LUID=af2e28fa-e12e-4d2b-b6b1-64a2441996e3" target="_blank" title="Visit Log">Visit Log</a>
+_pcre_masks["logs_visit"] = ("<a href=['\"][^'\"]*/seek/log.aspx\?LUID=[a-z0-9-]+['\"][^>]*>Visit Log</a>", re.I)
 
 
-class MyFindsParser(BaseParser, UserList):
+class MyGeocachingLogs(BaseParser):
     """
-    Parse myfinds list.
-
-    Subclass of UserList.
-
-    Attributes:
-        caches      --- List of found caches.
-        count       --- Number of found caches.
+    Parse and filter the list of my logs from webpage source.
 
     Methods:
-        get_caches  --- Parse and return list of found caches.
-        get_count   --- Parse and return number of found caches.
+        get         --- Parse and return list of user's geocaching logs.
+        get_finds   --- Parse and return logs of type: Found it,
+                        Webcam Photo Taken, Attended
 
     """
 
-    def __init__(self, datasource=None):
+    _url = "http://www.geocaching.com/my/logs.aspx?s=1"
+
+    def __init__(self):
+        self._log = logging.getLogger("gcparser.parser.MyGeocachingLogs")
+        BaseParser.__init__(self)
+
+    def get(self, log_types=None):
         """
+        Parse and return list of user's geocaching logs.
+
         Keyworded arguments:
-            datasource  --- Datasource instance, or None.
+            log_types       --- If not None return only logs of listed type.
 
         """
-        self._log = getLogger("gcparser.parser.myfinds")
-        BaseParser.__init__(self, datasource=datasource)
-        self._caches = None
-        self._count = None
+        data = self.http.request(self._url, auth=True)
+        expected_count = len(_pcre("logs_visit").findall(data))
+        logs = []
+        for log in _pcre("logs_item").findall(data):
+            expected_count -= 1
 
-    def _load(self):
-        """ Loads data from webpage. """
-        BaseParser._load(self, "http://www.geocaching.com/my/logs.aspx?s=1", auth=True)
+            log_type = _unescape(log[0]).strip()
+            self._log.log_parser("type = {0}".format(log_type))
+            if log_types is not None and log_type not in log_types:
+                self._log.debug("Wrong log type, continuing...")
+                continue
+            log_date = "{0:04d}-{1:02d}-{2:02d}".format(int(log[3]), int(log[1]), int(log[2]))
+            log_id = log[18]
+            self._log.log_parser("date = {0}".format(log_date))
+            self._log.log_parser("luid = {0}".format(log_id))
 
-    @property
-    def data(self):
-        return self.caches
+            cache = {}
+            cache["type"] = _unescape(log[6]).strip()
+            # GS weird changes bug
+            if cache["type"] == "Unknown Cache":
+                cache["type"] = "Mystery/Puzzle Cache"
+            cache["disabled"] = 0
+            cache["archived"] = 0
+            if log[10]:
+                cache["disabled"] = 1
+                if log[11]:
+                    cache["archived"] = 1
+            if log[15]:
+                cache["province"] = _unescape(log[15]).strip()
+            else:
+                cache["province"] = ""
+            cache["country"] = _unescape(log[16]).strip()
+            cache["guid"] = log[9]
+            cache["name"] = _unescape(_unescape(log[12])).strip()
+            self._log.log_parser("cache_name = {0}".format(cache["name"]))
+            self._log.log_parser("cache_type = {0}".format(cache["type"]))
+            self._log.log_parser("cache_guid = {0}".format(cache["guid"]))
+            self._log.log_parser("archived = {0}".format(cache["archived"]))
+            self._log.log_parser("disabled = {0}".format(cache["disabled"]))
+            self._log.log_parser("country = {0}".format(cache["country"]))
+            self._log.log_parser("province = {0}".format(cache["province"]))
 
-    @property
-    def caches(self):
-        """ List of found caches. """
-        if self._caches is None:
-            self._caches = self.get_caches()
-        return self._caches
+            logs.append(LogItem(log_id, log_type, log_date, cache))
+        if expected_count > 0:
+            self._log.error("Seems like I missed {0} geocaching logs for some reason.".format(expected_count))
+        logs.reverse()
+        return logs
 
-    def get_caches(self):
+    def get_finds(self):
         """
-        Parse and return list of found caches.
-
-        """
-        self._load()
-        caches = []
-        if self.count > 0:
-            cache = None
-            for line in self._data.splitlines():
-                match = _pcre("logs_found").match(line)
-                if match is not None:
-                    cache = {"sequence":self.count-len(caches)}
-                    self._log.debug("NEW cache record.")
-                    self._log.log_parser("sequence = {0}".format(cache["sequence"]))
-
-                if cache is not None:
-                    if "f_date" not in cache:
-                        match = _pcre("logs_date").match(line)
-                        if match is not None:
-                            cache["f_date"] = "{0:04d}-{1:02d}-{2:02d}".format(int(match.group(3)), int(match.group(1)), int(match.group(2)))
-                            self._log.log_parser("f_date = {0}".format(cache["f_date"]))
-
-                    if "guid" not in cache:
-                        match = _pcre("logs_name").match(line)
-                        if match is not None:
-                            cache["guid"] = match.group(1)
-                            cache["name"] = _unescape(match.group(4)).strip()
-                            cache["disabled"] = 0
-                            cache["archived"] = 0
-                            if match.group(2):
-                                cache["disabled"] = 1
-                                if match.group(3):
-                                    cache["archived"] = 1
-                            self._log.log_parser("guid = {0}".format(cache["guid"]))
-                            self._log.log_parser("name = {0}".format(cache["name"]))
-                            self._log.log_parser("disabled = {0}".format(cache["disabled"]))
-                            self._log.log_parser("archived = {0}".format(cache["archived"]))
-
-                    match = _pcre("logs_log").match(line)
-                    if match is not None:
-                        cache["f_luid"] = match.group(1)
-                        self._log.log_parser("f_luid = {0}".format(cache["f_luid"]))
-                        self._log.debug("END of cache record '{0}'.".format(cache["name"]))
-                        caches.append(cache)
-                        cache = None
-        return caches
-
-    def __len__(self):
-        return self.count
-
-    @property
-    def count(self):
-        """ Number of found caches. """
-        if self._count is None:
-            self._count = self.get_count()
-        return self._count
-
-    def get_count(self):
-        """
-        Parse and return number of found caches.
+        Parse and return logs of type: Found it, Webcam Photo Taken, Attended
 
         """
-        self._load()
-        return len(_pcre("logs_found").findall(self._data))
+        return self.get(("Found it", "Webcam Photo Taken", "Attended"))
 
-    # Override unsupported UserList methods
-    def __add__(self, other):
-        raise NotImplemented
-    def __radd__(self, other):
-        raise NotImplemented
-    def __mul__(self, n):
-        raise NotImplemented
 
 
 
 ########################################
-# SeekParser                           #
+# SeekCache                            #
 ########################################
 # <td class="PageBuilderWidget"><span>Total Records: <b>5371</b> - Page: <b>1</b> of <b>269</b>
-_pcre_masks["search_totals"] = ("<td class=\"PageBuilderWidget\"><span>Total Records: <b>([0-9]+)</b> - Page: <b>[0-9]+</b> of <b>([0-9]+)</b>", re.I)
-# <img src="/images/icons/compass/N.gif" alt="Direction and Distance" />
-_pcre_masks["list_start"] = ("\s*<img src=\"/images/icons/compass/N\.gif\" alt=\"Direction and Distance\" />", re.I)
-_pcre_masks["list_end"] = ("\s*</table>", re.I)
-_pcre_masks["list_user_start"] = ("\s+<br\s*/>\s*", re.I)
-# <img src="/images/icons/compass/NW.gif" alt="NW" />NW<br />0.19mi
-_pcre_masks["list_compass"] = ("\s*<br />(Here)|\s*<img src=['\"]/images/icons/compass/[EWNS]+.gif['\"][^>]*>[EWNS]+<br />([0-9.]+)(ft|mi)", re.I)
-# <img src="/images/small_profile.gif" alt="Premium Member Only Cache" with="15" height="13" />
-_pcre_masks["list_PMonly"] = ("<img src=['\"]/images/small_profile.gif['\"] alt=['\"]Premium Member Only Cache['\"][^>]*>", re.I)
-# <img src="http://www.geocaching.com/images/wpttypes/794.gif" alt="Police Geocaching Squad 2007 Geocoin (1 item(s))" />
-_pcre_masks["list_item"] = ("<img src=\"[^\"]+wpttypes/[^\"]+\"[^>]*>", re.I)
-# (3.5/1.5)<br />
-_pcre_masks["list_DT"] = ("^\s+\(([12345.]+)/([12345.]+)\)<br />", re.I)
-# <img src="/images/icons/container/small.gif" alt="Size: Small" />
-_pcre_masks["list_size"] = ("^\s+<img[^>]*src=['\"][^'\"]*/icons/container/[^'\"]*['\"][^>]*alt=['\"]Size: ([^'\"]+)['\"][^>]*>", re.I)
-# 25 Jun 10 <img src="/images/new3.gif" alt="New!" />
-_pcre_masks["list_hidden"] = ("([0-9]+) ([A-Za-z]+) ([0-9]+)( <img[^>]*alt=['\"]New!['\"][^>]*>)?", re.I)
-# <a href="/seek/cache_details.aspx?guid=673d255f-45e8-4b91-8c61-a47878ec65de"><span class="Strike">Pribehy Franty Omacky 3.: Dochazi benzin</span></a>
-_pcre_masks["list_name"] = ("<a href=['\"][^'\"]*/seek/cache_details.aspx\?guid=([a-z0-9-]+)['\"]>(<span class=\"(OldWarning )?Strike\">)?([^<]+)(</span>)?</a>", re.I)
-# by Franta Omacka
-_pcre_masks["list_owner"] = ("^\s*by (.*)\s*$", re.I)
-# (GC1NF8Y)<br />
-_pcre_masks["list_waypoint"] = ("^\s*\((GC[0-9A-Z]+)\)<br />\s*$", re.I)
-# Hlavni mesto Praha
-_pcre_masks["list_location"] = ("^\s*(([^,.]+), )?([^.]+)\s*$", re.I)
-# 30 Oct 09<br />
-_pcre_masks["list_foundDate"] = ("^\s*([0-9]+) ([A-Za-z]+) ([0-9]+)<br />\s*$", re.I)
-# 2 days ago*<br />
-_pcre_masks["list_foundDays"] = ("^\s*([0-9]+) days ago((<strong>)?\*(</strong>)?)?<br />\s*$", re.I)
-# Yesterday<strong>*</strong><br />
-# Today<strong>*</strong><br />
-_pcre_masks["list_foundWords"] = ("^\s*((Yester|To)day)((<strong>)?\*(</strong>)?)?<br />\s*$", re.I)
-# End
-_pcre_masks["list_cacheEnd"] = ("</tr>", re.I)
+_pcre_masks["search_totals"] = ("<td class=\"PageBuilderWidget\"><span>Total Records: <b>([0-9]+)</b>", re.I)
+_pcre_masks["seek_results"] = ("<th[^>]*>\s*<img [^>]*alt=['\"]Send to GPS['\"][^>]*>\s*</th>(.*?)</table>", re.I|re.S)
+_pcre_masks["seek_row"] = ("<tr bg[^>]*>(.*?)<td[^>]*>\s*</td>\s*</tr>", re.I|re.S)
+# <span id="ctl00_ContentBody_dlResults_ctl01_uxFavoritesValue" title="9 - Click to view the Favorites/Premium Logs ratio." class="favorite-rank">9</span>
+_pcre_masks["seek_favorites"] = ("<span[^>]*class=['\"]favorite-rank['\"][^>]*>([0-9]+)</span>", re.I)
+# <a href="/seek/cache_details.aspx?guid=dffb4ac7-65ea-409b-9e2c-134d41824db7" class="lnk"><img src="http://www.geocaching.com/images/wpttypes/sm/2.gif" alt="Traditional Cache" title="Traditional Cache" /></a> <a href="/seek/cache_details.aspx?guid=dffb4ac7-65ea-409b-9e2c-134d41824db7" class="lnk OldWarning Strike Strike"><span>Secska vyhlidka </span></a>
+# by Milancer
+# (GCNXY6)<br />
+# Pardubicky kraj, Czech Republic
+_pcre_masks["seek_cache"] = ("(<a[^>]*>)?\s*<img src=['\"](http://www\.geocaching\.com)?/images/wpttypes/[^'\"]+['\"][^>]*title=\"([^\"]+)\"[^>]*>\s*(</a>)?\s*<a href=['\"](http://www\.geocaching\.com)?/seek/cache_details.aspx\?guid=([a-z0-9-]+)['\"]([^>]*class=['\"][^'\"]*?(\s+OldWarning)?(\s+Strike)?[^'\"]*?['\"])?[^>]*>\s*(<span[^>]*>)?\s*([^<]+)\s*(</span>)?\s*</a>\s*by (.*?)\s*\((GC[A-Z0-9]+)\)<br[^>]*>\s*(([^,<]+), )?([^<]+?)\s*\n", re.I)
+# <a id="ctl00_ContentBody_dlResults_ctl02_uxTravelBugList" class="tblist"
+_pcre_masks["seek_items"] = ("<a [^>]*class=['\"]tblist['\"][^>]*>", re.I)
+# <img src="/images/small_profile.gif" alt="Premium Member Only Cache" title="Premium Member Only Cache" with="15" height="13" />
+_pcre_masks["seek_PMonly"] = ("<img [^>]*alt=['\"]Premium Member Only Cache['\"][^>]*>", re.I)
+# 30 Oct 09
+_pcre_masks["seek_date"] = ("\s*<td[^>]*>\s*([0-9]+) ([A-Z]+) ([0-9]+)", re.I)
+# 2 days ago
+_pcre_masks["seek_dateDays"] = ("\s*<td[^>]*>\s*([0-9]+) days ago", re.I)
+# Yesterday
+# Today
+_pcre_masks["seek_dateWords"] = ("\s*<td[^>]*>\s*((Yester|To)day)", re.I)
 
 
-class SeekParser(BaseParser, UserList):
+class SeekCache(BaseParser):
     """
-    Parse seek query.
-
-    Subclass of UserList.
-
-    Attributes:
-        caches      --- List of found caches.
-        count       --- Number of found caches.
-        pages       --- Number of pages in result.
+    Parse caches in seek query from webpage source.
 
     Methods:
-        get_page    --- Parse and return list of found caches from page.
-        get_caches  --- Parse and return list of all found caches.
-        get_count   --- Parse and return number of found caches.
-        get_pages   --- Parse and return number of pages in result.
+        coord       --- Parse and return sequence of found caches by coordinates.
+        user        --- Parse and return sequence of found caches found by user.
+        owner       --- Parse and return sequence of found caches placed by user.
+        get         --- Parse and return sequence of found caches on url.
 
     """
 
-    def __init__(self, type_="coord", data={}, datasource=None):
+    _url = "http://www.geocaching.com/seek/nearest.aspx?"
+
+    def __init__(self):
+        self._log = logging.getLogger("gcparser.parser.SeekCache")
+        BaseParser.__init__(self)
+
+    def coord(self, lat, lon, dist):
         """
-        Keyworded arguments:
-            type_       --- Type of seek query ('coord', 'user', 'owner').
-            data        --- Additional data for query.
-            datasource  --- Datasource instance, or None.
+        Parse and return sequence of found caches by coordinates.
+
+        Arguments:
+            lat         --- Latitude of center.
+            lon         --- Longitude of center.
+            dist        --- Maximum distance from center.
 
         """
-        self._log = getLogger("gcparser.parser.seek")
-        BaseParser.__init__(self, datasource=datasource)
-        self._url = "http://www.geocaching.com/seek/nearest.aspx?"
-        self._type = type_
-        if type_ == "coord":
-            if "lat" not in data or "lon" not in data:
-                self._log.critical("'coord' type seek needs 'lat' and 'lon' parameters.")
-            if not isinstance(data["lat"], float) or not isinstance(data["lon"], float):
-                self._log.critical("LatLon needs to be float.")
-            if not "dist" in data or not isinstance(data["dist"], int):
-                data["dist"] = ""
-            self._url += "origin_lat={lat:.5f}&origin_long={lon:.5f}&dist={dist}&submit3=Search".format(**data)
-        elif type_ == "user":
-            if "user" not in data:
-                self._log.critical("'user' type seek needs 'user' parameter.")
-            self._url += urlencode({"ul":data["user"], "submit4":"Go"})
-        elif type_ == "owner":
-            if "user" not in data:
-                self._log.critical("'owner' type seek needs 'user' parameter.")
-            self._url += urlencode({"u":data["user"], "submit4":"Go"})
+        if not isinstance(lat, float) or not isinstance(lon, float):
+            self._log.critical("LatLon must be float.")
+        if not isinstance(dist, int):
+            self._log.critical("Dist must be integer.")
+        url = self._url + "origin_lat={0:.5f}&origin_long={1:.5f}&dist={2}&submit3=Search".format(lat, lon, dist)
+        return self.get(url)
+
+    def user(self, user):
+        """
+        Parse and return sequence of found caches found by user.
+
+        Arguments:
+            user        --- Username.
+
+        """
+        url = self._url + urllib.parse.urlencode({"ul":user, "submit4":"Go"})
+        return self.get(url)
+
+    def owner(self, user):
+        """
+        Parse and return sequence of found caches placed by user.
+
+        Arguments:
+            user        --- Username.
+
+        """
+        url = self._url + urllib.parse.urlencode({"u":user, "submit4":"Go"})
+        return self.get(url)
+
+    def get(self, url):
+        """
+        Parse and return sequence of found caches on url.
+
+        Arguments:
+            url         --- URL where to start search.
+
+        """
+        data = self.http.request(url)
+        post_data = self._parse_post_data(data)
+        caches = self._parse_caches(data)
+        count = self._parse_count(data)
+        return SeekResult(caches, count, url, post_data, self)
+
+    def _parse_post_data(self, data):
+        post_data = {}
+        for hidden_input in _pcre("hidden_input").findall(data):
+            post_data[hidden_input[0]] = hidden_input[1]
+        post_data["__EVENTTARGET"] = "ctl00$ContentBody$pgrTop$ctl08"
+        return post_data
+
+    def _parse_count(self, data):
+        """ Parse total count of found caches. """
+        match = _pcre("search_totals").search(data)
+        if match is not None:
+            return int(match.group(1))
         else:
-            self._log.critical("Uknown seek type.")
-        self._caches = None
-        self._count = None
-        self._pages = None
-        self._data = []
-        self._post_data = {}
+            self._log.warn("Could not find total count of found caches... assuming zero.")
+            return 0
+
+    def _parse_caches(self, data):
+        caches = []
+        match = _pcre("seek_results").search(data)
+        if match is not None:
+            for data in _pcre("seek_row").findall(match.group(1)):
+                cache = {}
+                data = data.split("</td>")
+                #print(data)
+                #print("------------------------------")
+
+                match = _pcre("seek_cache").search(data[4])
+                if match is not None:
+                    cache["type"] = _unescape(match.group(3)).strip()
+                    # GS weird changes bug
+                    if cache["type"] == "Unknown Cache":
+                        cache["type"] = "Mystery/Puzzle Cache"
+                    cache["guid"] = match.group(6)
+                    if match.group(8) is not None:
+                        cache["archived"] = 1
+                    else:
+                        cache["archived"] = 0
+                    if match.group(9) is not None:
+                        cache["disabled"] = 1
+                    else:
+                        cache["disabled"] = 0
+                    cache["name"] = _unescape(match.group(11)).strip()
+                    cache["owner"] = _unescape(match.group(13)).strip()
+                    cache["waypoint"] = match.group(14)
+                    if match.group(16) is not None:
+                        cache["province"] = _unescape(match.group(16)).strip()
+                    else:
+                        cache["province"] = ""
+                    cache["country"] = _unescape(match.group(17)).strip()
+                    self._log.log_parser("name = {0}".format(cache["name"]))
+                    self._log.log_parser("waypoint = {0}".format(cache["waypoint"]))
+                    self._log.log_parser("guid = {0}".format(cache["guid"]))
+                    self._log.log_parser("type = {0}".format(cache["type"]))
+                    self._log.log_parser("owner = {0}".format(cache["owner"]))
+                    self._log.log_parser("disabled = {0}".format(cache["disabled"]))
+                    self._log.log_parser("archived = {0}".format(cache["archived"]))
+                    self._log.log_parser("province = {0}".format(cache["province"]))
+                    self._log.log_parser("country = {0}".format(cache["country"]))
+                else:
+                    self._log.critical("Could not parse cache details.")
+
+                match = _pcre("seek_date").match(data[7])
+                if match is not None:
+                    cache["hidden"] = "{0:04d}-{1:02d}-{2:02d}".format(int(match.group(3))+2000, _months_abbr[match.group(2)], int(match.group(1)))
+                    self._log.log_parser("hidden = {0}".format(cache["hidden"]))
+                else:
+                    self._log.error("Hidden date not found.")
+
+                match = _pcre("seek_date").match(data[8])
+                if match is not None:
+                    cache["found"] = "{0:04d}-{1:02d}-{2:02d}".format(int(match.group(3))+2000, _months_abbr[match.group(2)], int(match.group(1)))
+                else:
+                    match = _pcre("seek_dateDays").match(data[8])
+                    if match is not None:
+                        found_date = date.today() - timedelta(days=int(match.group(1)))
+                        cache["found"] = found_date.isoformat()
+                    else:
+                        match = _pcre("seek_dateWords").match(data[8])
+                        if match is not None:
+                            found_date = date.today()
+                            if match.group(1) == "Yesterday":
+                                found_date = found_date - timedelta(days=1)
+                            cache["found"] = found_date.isoformat()
+                if "found" in cache:
+                    self._log.log_parser("found = {0}".format(cache["found"]))
+                else:
+                    cache["found"] = None
+                    self._log.log_parser("Never found.")
+
+                cache["PMonly"] = _pcre("seek_PMonly").search(data[5]) is not None
+                if cache["PMonly"]:
+                    self._log.log_parser("PM only cache.")
+                cache["items"] = _pcre("seek_items").search(data[5]) is not None
+                if cache["items"]:
+                    self._log.log_parser("Cache has items inside.")
+
+                match = _pcre("seek_favorites").search(data[2])
+                if match is not None:
+                    cache["favorites"] = int(match.group(1))
+                    self._log.log_parser("favorites = {0:d}".format(cache["favorites"]))
+                else:
+                    cache["favorites"] = 0
+                    self._log.error("Favorites count not found.")
+
+                caches.append(cache)
+        return caches
+
+
+class SeekResult(Sequence):
+    """ Sequence wrapper for a result of seek query with lazy loading of next pages. """
+
+    def __init__(self, caches, count, url, post_data, parser):
+        self._log = logging.getLogger("gcparser.SeekResult")
+        self._count = count
+        self._caches = list(caches)
+        if len(self._caches) not in (self._count, 20):
+            self._log.critical("Seems like I missed some caches in the list, got only {0} caches on first page out of total {1}.".format(len(self._caches), self._count))
+        self._url = url
+        self._post_data = post_data
+        self._parser = parser
 
     def _load_next_page(self):
-        """ Loads data from webpage. """
-        if len(self._data) == 0:
-            self._data.append(self.datasource.request(self._url))
+        data = self._parser.http.request(self._url, data=self._post_data)
+        self._post_data = self._parser._parse_post_data(data)
+        caches = self._parser._parse_caches(data)
+        if not (len(caches) == 20 or len(caches) + len(self._caches) == self._count):
+            self._log.critical("Seems like I missed some caches in the list, got only {0} caches on this page, total {1} caches out of {2}.".format(len(caches), len(caches)+len(self._caches), self._count))
+        self._caches.extend(caches)
+
+    def __getitem__(self, index):
+        if not isinstance(index, int):
+            raise IndexError
+        if index < 0:
+            index += len(self)
+        if 0 <= index < len(self):
+            while index >= len(self._caches):
+                self._load_next_page()
+            return self._caches[index]
         else:
-            if len(self._data) >= self.pages:
-                return
-            self._data.append(self.datasource.request(self._url, data=self._post_data))
-        # POST data for next page
-        self._post_data = {}
-        for hidden_input in _pcre("hidden_input").findall(self._data[-1]):
-            self._post_data[hidden_input[0]] = hidden_input[1]
-        self._post_data["__EVENTTARGET"] = "ctl00$ContentBody$pgrTop$ctl08"
-
-    @property
-    def data(self):
-        return self.caches
-
-    @property
-    def caches(self):
-        """ List of all found caches. """
-        if self._caches is None:
-            self._caches = self.get_caches()
-        return self._caches
-
-    def get_caches(self):
-        """
-        Parse and return list of all found caches.
-
-        """
-        caches = []
-        for page in range(1, self.pages+1):
-            caches.extend(self.get_page(page))
-        return caches
-
-    def get_page(self, page):
-        """
-        Parse and return list of found caches from page.
-
-        Arguments:
-            page        --- Page number.
-
-        """
-        if page > self.pages:
-            return []
-        while page > len(self._data):
-            self._load_next_page()
-        caches = []
-        cache = None
-        started = False
-        for line in self._data[page-1].splitlines():
-            if started:
-                match = _pcre("list_end").match(line)
-                if match is not None:
-                    self._log.debug("Cache table ended.")
-                    started = False
-                    cache = None
-                elif self._type == "coord":
-                    match = _pcre("list_compass").match(line)
-                    if match is not None:
-                        self._log.debug("NEW cache record.")
-                        cache = {"PMonly":False, "items":False, "found":False}
-                        if match.group(1) == "Here":
-                            cache["distance"] = 0.0
-                        else:
-                            if match.group(3) == "ft":
-                                cache["distance"] = float(match.group(2)) * 0.0003048
-                            else:
-                                cache["distance"] = float(match.group(2)) * 1.609344
-                        self._log.log_parser("distance = {0:.3f}".format(cache["distance"]))
-                else:
-                    match = _pcre("list_user_start").match(line)
-                    if match is not None:
-                        self._log.debug("NEW cache record.")
-                        cache = {"PMonly":False, "items":False, "found":False}
-            else:
-                match = _pcre("list_start").match(line)
-                if match is not None:
-                    self._log.debug("Cache table started.")
-                    started = True
-
-            if cache is not None:
-                if "type" not in cache:
-                    match = _pcre("cache_type").search(line)
-                    if match is not None:
-                        cache["type"] = _unescape(match.group(1)).strip()
-                        # GS weird changes bug
-                        if cache["type"] == "Unknown Cache":
-                            cache["type"] = "Mystery/Puzzle Cache"
-                        self._log.log_parser("type = {0}".format(cache["type"]))
-                elif "difficulty" not in cache:
-                    match = _pcre("list_PMonly").search(line)
-                    if match is not None:
-                        cache["PMonly"] = True
-                        self._log.log_parser("PM only cache.")
-
-                    match = _pcre("list_item").search(line)
-                    if match is not None:
-                        cache["items"] = True
-                        self._log.log_parser("Has items inside.")
-                    match = _pcre("list_DT").search(line)
-                    if match is not None:
-                        cache["difficulty"] = float(match.group(1))
-                        cache["terrain"] = float(match.group(2))
-                        self._log.log_parser("difficulty = {0:.1f}".format(cache["difficulty"]))
-                        self._log.log_parser("terrain = {0:.1f}".format(cache["terrain"]))
-                elif "size" not in cache:
-                    match = _pcre("list_size").search(line)
-                    if match is not None:
-                        cache["size"] = match.group(1).strip()
-                        self._log.log_parser("size = {0}".format(cache["size"]))
-                elif "hidden" not in cache:
-                    match = _pcre("list_hidden").search(line)
-                    if match is not None:
-                        cache["hidden"] = "{0:04d}-{1:02d}-{2:02d}".format(int(match.group(3))+2000, _months_abbr[match.group(2)], int(match.group(1)))
-                        self._log.log_parser("hidden = {0}".format(cache["hidden"]))
-                elif "name" not in cache:
-                    match = _pcre("list_name").search(line)
-                    if match is not None:
-                        cache["guid"] = match.group(1)
-                        cache["name"] = _unescape(match.group(4)).strip()
-                        if match.group(2):
-                            cache["disabled"] = 1
-                        else:
-                            cache["disabled"] = 0
-                        if match.group(3):
-                            cache["archived"] = 1
-                        else:
-                            cache["archived"] = 0
-                        self._log.log_parser("guid = {0}".format(cache["guid"]))
-                        self._log.log_parser("name = {0}".format(cache["name"]))
-                        self._log.log_parser("disabled = {0}".format(cache["disabled"]))
-                        self._log.log_parser("archived = {0}".format(cache["archived"]))
-                elif "owner" not in cache:
-                    match = _pcre("list_owner").search(line)
-                    if match is not None:
-                        cache["owner"] = _unescape(match.group(1)).strip()
-                        self._log.log_parser("owner = {0}".format(cache["owner"]))
-                elif "waypoint" not in cache:
-                    match = _pcre("list_waypoint").search(line)
-                    if match is not None:
-                        cache["waypoint"] = match.group(1).strip()
-                        self._log.log_parser("waypoint = {0}".format(cache["waypoint"]))
-                elif "country" not in cache:
-                    match = _pcre("list_location").search(line)
-                    if match is not None:
-                        if match.group(2) is not None:
-                            cache["province"] = _unescape(match.group(2)).strip()
-                        else:
-                            cache["province"] = ""
-                        cache["country"] = _unescape(match.group(3)).strip()
-                        self._log.log_parser("country = {0}".format(cache["country"]))
-                        self._log.log_parser("province = {0}".format(cache["province"]))
-                elif not cache["found"]:
-                    match = _pcre("list_foundDate").search(line)
-                    if match is not None:
-                        cache["found"] = "{0:04d}-{1:02d}-{2:02d}".format(int(match.group(3))+2000, _months_abbr[match.group(2)], int(match.group(1)))
-                    else:
-                        match = _pcre("list_foundDays").search(line)
-                        if match is not None:
-                            found_date = date.today() - timedelta(days=int(match.group(1)))
-                            cache["found"] = found_date.isoformat()
-                        else:
-                            match = _pcre("list_foundWords").search(line)
-                            if match is not None:
-                                found_date = date.today()
-                                if match.group(1) == "Yesterday":
-                                    found_date = found_date - timedelta(days=1)
-                                cache["found"] = found_date.isoformat()
-                    if cache["found"]:
-                        self._log.log_parser("found = {0}".format(cache["found"]))
-
-                match = _pcre("list_cacheEnd").search(line)
-                if match is not None:
-                    if (self._type != "coord" or "distance" in cache) and "type" in cache and "difficulty" in cache and "size" in cache and "hidden" in cache and "name" in cache and "owner" in cache and "waypoint" in cache and "country" in cache and "province" in cache:
-                        self._log.debug("END of cache record {0}.".format(cache["name"]))
-                        caches.append(cache)
-                        cache = None
-                    else:
-                        self._log.warn("Seems like end of cache record, but some keys were not found.")
-
-        if not (len(caches) == 20 or (len(caches) == self.count % 20 and page == self.pages)):
-            self._log.error("Seems like I missed some caches in the list, got only {0} caches on page {1}/{2}.".format(len(caches), page, self.pages))
-        return caches
+            raise IndexError
 
     def __len__(self):
-        return self.count
-
-    @property
-    def count(self):
-        """ Number of found caches. """
-        if self._count is None:
-            self._count = self.get_count()
         return self._count
 
-    def get_count(self):
-        """
-        Parse and return number of found caches.
-
-        """
-        return self._parse_totals()[0]
-
-    @property
-    def pages(self):
-        """ Number of pages in result. """
-        if self._pages is None:
-            self._pages = self.get_pages()
-        return self._pages
-
-    def get_pages(self):
-        """
-        Parse and return number of pages in result.
-
-        """
-        return self._parse_totals()[1]
-
-    def _parse_totals(self):
-        """ Parse count and pages. """
-        if len(self._data) == 0:
-            self._load_next_page()
-        match = _pcre("search_totals").search(self._data[0])
-        if match is not None:
-            return (int(match.group(1)), int(match.group(2)))
-        else:
-            self._log.warn("Could not find count and page_count... assuming empty result.")
-            self._caches = []
-            return (0, 0)
-
-    # Override unsupported UserList methods
-    def __add__(self, other):
-        raise NotImplemented
-    def __radd__(self, other):
-        raise NotImplemented
-    def __mul__(self, n):
-        raise NotImplemented
-
 
 
 ########################################
-# ProfileEdit                          #
+# Profile                              #
 ########################################
-class ProfileEdit(BaseParser):
+class Profile(BaseParser):
     """
-    Profile edit.
-
-    Attributes:
-        data        --- Data to save in user's geocaching.com profile.
+    Manage user's profile.
 
     Methods:
-        save        --- Save data in user's geocaching.com profile.
+        update      --- Update user's geocaching.com profile.
 
     """
 
-    def __init__(self, data, datasource=None):
-        """
-        Arguments:
-            data        --- Data to save in user's geocaching.com profile.
+    def __init__(self):
+        self._log = logging.getLogger("gcparser.parser.Profile")
+        BaseParser.__init__(self)
 
-        Keyworded arguments:
-            datasource  --- Datasource instance, or None.
-
+    def update(self, profile_data):
         """
-        self._log = getLogger("gcparser.parser.profileedit")
-        BaseParser.__init__(self, datasource=datasource)
-        self.data = data
-
-    def save(self):
-        """
-        Saves data in user's geocaching.com profile.
+        Update user's geocaching.com profile.
 
         """
-        self._load("http://www.geocaching.com/account/editprofiledetails.aspx", auth=True)
-        data = {}
-        for hidden_input in _pcre("hidden_input").findall(self._data):
-            data[hidden_input[0]] = hidden_input[1]
-        data["ctl00$ContentBody$uxProfileDetails"] = str(self.data)
-        data["ctl00$ContentBody$uxSave"] = "Save Changes"
-        self._data = None
-        self._load("http://www.geocaching.com/account/editprofiledetails.aspx", auth=True, data=data)
+        data = self.http.request("http://www.geocaching.com/account/editprofiledetails.aspx", auth=True)
+        post_data = {}
+        for hidden_input in _pcre("hidden_input").findall(data):
+            post_data[hidden_input[0]] = hidden_input[1]
+        post_data["ctl00$ContentBody$uxProfileDetails"] = str(profile_data)
+        post_data["ctl00$ContentBody$uxSave"] = "Save Changes"
+        self.http.request("http://www.geocaching.com/account/editprofiledetails.aspx", auth=True, data=post_data)
 
-
-
-############################################################
-### Variables.                                           ###
-############################################################
-
-parsers = {}
-parsers["myfinds"] = MyFindsParser
-parsers["seek"] = SeekParser
-parsers["cache"] = CacheParser
-parsers["profileedit"] = ProfileEdit
-""" Dictionary containing parser classes. """
-
-
-
-############################################################
-### Exceptions.                                          ###
-############################################################
-
-class CredentialsError(ValueError):
-    """
-    Raised on invalid credentials.
-
-    """
-    pass
-
-
-class LoginError(AssertionError):
-    """
-    Raised when geocaching.com login fails.
-
-    """
-    pass
-
-
-class DatasourceError(ValueError):
-    """
-    Raised on invalid datasource.
-
-    """
-    pass
