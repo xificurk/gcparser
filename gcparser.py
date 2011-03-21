@@ -677,18 +677,16 @@ class CacheDetails(BaseParser):
         data = self.http.request(url, auth=True)
 
         details = {}
-        if type_ == "guid":
-            details["guid"] = id_
-        else:
+        if type_ == "wp":
             details["waypoint"] = id_
-
-        match = _pcre("waypoint").search(data)
-        if match is not None:
-            details["waypoint"] = match.group(0)
-            self._log.log_parser("waypoint = {0}".format(details["waypoint"]))
         else:
-            details["waypoint"] = "GC"
-            self._log.error("Waypoint not found.")
+            details["guid"] = id_
+            match = _pcre("waypoint").search(data)
+            if match is not None:
+                details["waypoint"] = match.group(0)
+                self._log.log_parser("waypoint = {0}".format(details["waypoint"]))
+            else:
+                self._log.error("Waypoint not found.")
 
         match = _pcre("PMonly").search(data)
         if match is not None:
@@ -703,7 +701,6 @@ class CacheDetails(BaseParser):
                 details["owner"] = _unescape(match.group(1)).strip()
                 self._log.log_parser("owner = {0}".format(details["owner"]))
             else:
-                details["owner"] = ""
                 self._log.error("Could not parse cache owner.")
 
             match = _pcre("PMsize").search(data)
@@ -711,7 +708,6 @@ class CacheDetails(BaseParser):
                 details["size"] = match.group(1).strip()
                 self._log.log_parser("size = {0}".format(details["size"]))
             else:
-                details["size"] = ""
                 self._log.error("Could not parse cache size.")
 
             match = _pcre("PMdifficulty").search(data)
@@ -719,7 +715,6 @@ class CacheDetails(BaseParser):
                 details["difficulty"] = float(match.group(1))
                 self._log.log_parser("difficulty = {0:.1f}".format(details["difficulty"]))
             else:
-                details["difficulty"] = 0
                 self._log.error("Could not parse cache difficulty.")
 
             match = _pcre("PMterrain").search(data)
@@ -727,7 +722,6 @@ class CacheDetails(BaseParser):
                 details["terrain"] = float(match.group(1))
                 self._log.log_parser("terrain = {0:.1f}".format(details["terrain"]))
             else:
-                details["terrain"] = 0
                 self._log.error("Could not parse cache terrain.")
 
             match = _pcre("PMcache_type").search(data)
@@ -735,7 +729,6 @@ class CacheDetails(BaseParser):
                 details["type"] = _cache_types[match.group(1)]
                 self._log.log_parser("type = {0}".format(details["type"]))
             else:
-                details["type"] = ""
                 self._log.error("Type not found.")
         else:
             details["PMonly"] = _pcre("cache_pm").search(data) is not None
@@ -762,12 +755,6 @@ class CacheDetails(BaseParser):
                 self._log.log_parser("country = {0}".format(details["country"]))
                 self._log.log_parser("province = {0}".format(details["province"]))
             else:
-                details["name"] = ""
-                details["owner"] = ""
-                details["hidden"] = "1980-01-01"
-                details["size"] = ""
-                details["difficulty"] = 0
-                details["terrain"] = 0
                 self._log.error("Could not parse cache details.")
 
             match = _pcre("cache_type").search(data)
@@ -778,7 +765,6 @@ class CacheDetails(BaseParser):
                     details["type"] = "Mystery/Puzzle Cache"
                 self._log.log_parser("type = {0}".format(details["type"]))
             else:
-                details["type"] = ""
                 self._log.error("Type not found.")
 
             match = _pcre("cache_owner_id").search(data)
@@ -788,10 +774,8 @@ class CacheDetails(BaseParser):
                 self._log.log_parser("guid = {0}".format(details["guid"]))
                 self._log.log_parser("owner_id = {0}".format(details["owner_id"]))
             else:
-                details["owner_id"] = ""
                 self._log.error("Owner id not found.")
                 if "guid" not in details:
-                    details["guid"] = ""
                     self._log.error("Guid not found.")
 
             details["disabled"] = 0
@@ -809,7 +793,6 @@ class CacheDetails(BaseParser):
                 details["favorites"] = int(match.group(1))
                 self._log.log_parser("favorites = {0}".format(details["favorites"]))
             else:
-                details["favorites"] = 0
                 self._log.error("Favorites count not found.")
 
             match = _pcre("cache_coords").search(data)
@@ -823,8 +806,6 @@ class CacheDetails(BaseParser):
                 self._log.log_parser("lat = {0:.5f}".format(details["lat"]))
                 self._log.log_parser("lon = {0:.5f}".format(details["lon"]))
             else:
-                details["lat"] = 0
-                details["lon"] = 0
                 self._log.error("Lat, lon not found.")
 
             match = _pcre("cache_shortDesc").search(data)
