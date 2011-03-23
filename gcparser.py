@@ -19,7 +19,7 @@ __author__ = "Petr Morávek (xificurk@gmail.com)"
 __copyright__ = "Copyright (C) 2009-2011 Petr Morávek"
 __license__ = "GPL"
 
-__version__ = "0.7.0"
+__version__ = "0.7.1"
 
 from collections import defaultdict, namedtuple, Sequence
 from datetime import date, datetime, timedelta
@@ -1113,91 +1113,91 @@ class SeekCache(BaseParser):
         match = _pcre("seek_results").search(data)
         if match is not None:
             for data in _pcre("seek_row").findall(match.group(1)):
-                cache = {}
                 data = data.split("</td>")
-                #print(data)
-                #print("------------------------------")
-
-                match = _pcre("seek_cache").search(data[4])
-                if match is not None:
-                    cache["type"] = _unescape(match.group(3)).strip()
-                    # GS weird changes bug
-                    if cache["type"] == "Unknown Cache":
-                        cache["type"] = "Mystery/Puzzle Cache"
-                    cache["guid"] = match.group(6)
-                    if match.group(8) is not None:
-                        cache["archived"] = 1
-                    else:
-                        cache["archived"] = 0
-                    if match.group(9) is not None:
-                        cache["disabled"] = 1
-                    else:
-                        cache["disabled"] = 0
-                    cache["name"] = _unescape(match.group(11)).strip()
-                    cache["owner"] = _unescape(match.group(13)).strip()
-                    cache["waypoint"] = match.group(14)
-                    if match.group(16) is not None:
-                        cache["province"] = _unescape(match.group(16)).strip()
-                    else:
-                        cache["province"] = ""
-                    cache["country"] = _unescape(match.group(17)).strip()
-                    self._log.log_parser("name = {0}".format(cache["name"]))
-                    self._log.log_parser("waypoint = {0}".format(cache["waypoint"]))
-                    self._log.log_parser("guid = {0}".format(cache["guid"]))
-                    self._log.log_parser("type = {0}".format(cache["type"]))
-                    self._log.log_parser("owner = {0}".format(cache["owner"]))
-                    self._log.log_parser("disabled = {0}".format(cache["disabled"]))
-                    self._log.log_parser("archived = {0}".format(cache["archived"]))
-                    self._log.log_parser("province = {0}".format(cache["province"]))
-                    self._log.log_parser("country = {0}".format(cache["country"]))
-                else:
-                    self._log.critical("Could not parse cache details.")
-
-                match = _pcre("seek_date").match(data[7])
-                if match is not None:
-                    cache["hidden"] = "{0:04d}-{1:02d}-{2:02d}".format(int(match.group(3))+2000, _months_abbr[match.group(2)], int(match.group(1)))
-                    self._log.log_parser("hidden = {0}".format(cache["hidden"]))
-                else:
-                    self._log.error("Hidden date not found.")
-
-                match = _pcre("seek_date").match(data[8])
-                if match is not None:
-                    cache["found"] = "{0:04d}-{1:02d}-{2:02d}".format(int(match.group(3))+2000, _months_abbr[match.group(2)], int(match.group(1)))
-                else:
-                    match = _pcre("seek_dateDays").match(data[8])
-                    if match is not None:
-                        found_date = date.today() - timedelta(days=int(match.group(1)))
-                        cache["found"] = found_date.isoformat()
-                    else:
-                        match = _pcre("seek_dateWords").match(data[8])
-                        if match is not None:
-                            found_date = date.today()
-                            if match.group(1) == "Yesterday":
-                                found_date = found_date - timedelta(days=1)
-                            cache["found"] = found_date.isoformat()
-                if "found" in cache:
-                    self._log.log_parser("found = {0}".format(cache["found"]))
-                else:
-                    cache["found"] = None
-                    self._log.log_parser("Never found.")
-
-                cache["PMonly"] = _pcre("seek_PMonly").search(data[5]) is not None
-                if cache["PMonly"]:
-                    self._log.log_parser("PM only cache.")
-                cache["items"] = _pcre("seek_items").search(data[5]) is not None
-                if cache["items"]:
-                    self._log.log_parser("Cache has items inside.")
-
-                match = _pcre("seek_favorites").search(data[2])
-                if match is not None:
-                    cache["favorites"] = int(match.group(1))
-                    self._log.log_parser("favorites = {0:d}".format(cache["favorites"]))
-                else:
-                    cache["favorites"] = 0
-                    self._log.error("Favorites count not found.")
-
+                cache = self._parse_cache_record(data)
                 caches.append(cache)
         return caches
+
+    def _parse_cache_record(self, data):
+        cache = {}
+        match = _pcre("seek_cache").search(data[4])
+        if match is not None:
+            cache["type"] = _unescape(match.group(3)).strip()
+            # GS weird changes bug
+            if cache["type"] == "Unknown Cache":
+                cache["type"] = "Mystery/Puzzle Cache"
+            cache["guid"] = match.group(6)
+            if match.group(8) is not None:
+                cache["archived"] = 1
+            else:
+                cache["archived"] = 0
+            if match.group(9) is not None:
+                cache["disabled"] = 1
+            else:
+                cache["disabled"] = 0
+            cache["name"] = _unescape(match.group(11)).strip()
+            cache["owner"] = _unescape(match.group(13)).strip()
+            cache["waypoint"] = match.group(14)
+            if match.group(16) is not None:
+                cache["province"] = _unescape(match.group(16)).strip()
+            else:
+                cache["province"] = ""
+            cache["country"] = _unescape(match.group(17)).strip()
+            self._log.log_parser("name = {0}".format(cache["name"]))
+            self._log.log_parser("waypoint = {0}".format(cache["waypoint"]))
+            self._log.log_parser("guid = {0}".format(cache["guid"]))
+            self._log.log_parser("type = {0}".format(cache["type"]))
+            self._log.log_parser("owner = {0}".format(cache["owner"]))
+            self._log.log_parser("disabled = {0}".format(cache["disabled"]))
+            self._log.log_parser("archived = {0}".format(cache["archived"]))
+            self._log.log_parser("province = {0}".format(cache["province"]))
+            self._log.log_parser("country = {0}".format(cache["country"]))
+        else:
+            self._log.critical("Could not parse cache details.")
+
+        match = _pcre("seek_date").match(data[7])
+        if match is not None:
+            cache["hidden"] = "{0:04d}-{1:02d}-{2:02d}".format(int(match.group(3))+2000, _months_abbr[match.group(2)], int(match.group(1)))
+            self._log.log_parser("hidden = {0}".format(cache["hidden"]))
+        else:
+            self._log.error("Hidden date not found.")
+
+        match = _pcre("seek_date").match(data[8])
+        if match is not None:
+            cache["found"] = "{0:04d}-{1:02d}-{2:02d}".format(int(match.group(3))+2000, _months_abbr[match.group(2)], int(match.group(1)))
+        else:
+            match = _pcre("seek_dateDays").match(data[8])
+            if match is not None:
+                found_date = date.today() - timedelta(days=int(match.group(1)))
+                cache["found"] = found_date.isoformat()
+            else:
+                match = _pcre("seek_dateWords").match(data[8])
+                if match is not None:
+                    found_date = date.today()
+                    if match.group(1) == "Yesterday":
+                        found_date = found_date - timedelta(days=1)
+                    cache["found"] = found_date.isoformat()
+        if "found" in cache:
+            self._log.log_parser("found = {0}".format(cache["found"]))
+        else:
+            cache["found"] = None
+            self._log.log_parser("Never found.")
+
+        cache["PMonly"] = _pcre("seek_PMonly").search(data[5]) is not None
+        if cache["PMonly"]:
+            self._log.log_parser("PM only cache.")
+        cache["items"] = _pcre("seek_items").search(data[5]) is not None
+        if cache["items"]:
+            self._log.log_parser("Cache has items inside.")
+
+        match = _pcre("seek_favorites").search(data[2])
+        if match is not None:
+            cache["favorites"] = int(match.group(1))
+            self._log.log_parser("favorites = {0:d}".format(cache["favorites"]))
+        else:
+            cache["favorites"] = 0
+            self._log.error("Favorites count not found.")
+        return cache
 
 
 class SeekResult(Sequence):
