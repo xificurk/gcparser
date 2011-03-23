@@ -77,6 +77,7 @@ class LoginError(AssertionError):
 Credentials = namedtuple("Credentials", "username password")
 CacheLog = namedtuple("CacheLog", "luid type date user user_id text")
 LogItem = namedtuple("LogItem", "luid type date cache")
+DTS = namedtuple("DTS", "difficulty terrain size")
 
 
 class StaticClass:
@@ -106,9 +107,12 @@ class HTTPInterface(StaticClass):
 
     Methods:
         set_credentials --- Set credentials to use for geocaching.com login.
+        get_data_dir    --- Get data directory.
         set_data_dir    --- Set data directory for for storing cookies,
                             user_agent, download stats...
         request         --- Retrive/send data from/to geocaching.com website.
+        build_opener    --- Build URL opener.
+        download_url    --- Download data from URL.
         wait            --- Handle wait time to lessen the load on geocaching.com
                             website.
 
@@ -141,6 +145,14 @@ class HTTPInterface(StaticClass):
             cls._log.warn("No geocaching.com credentials given, some features won't be accessible.")
         cls._credentials = credentials
         cls._load_stats()
+
+    @classmethod
+    def get_data_dir(cls, data_dir=None):
+        """
+        Get data directory.
+
+        """
+        return cls._data_dir
 
     @classmethod
     def set_data_dir(cls, data_dir=None):
@@ -179,20 +191,9 @@ class HTTPInterface(StaticClass):
             check       --- Re-check if we're logged in after download.
 
         """
-        if auth:
-            cookies = cls._get_cookies()
-            opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookies))
-        else:
-            opener = urllib.request.build_opener()
-        headers = []
-        headers.append(("User-agent", cls._get_user_agent()))
-        headers.append(("Accept", "text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8"))
-        headers.append(("Accept-Language", "en-us,en;q=0.5"))
-        headers.append(("Accept-Charset", "utf-8,*;q=0.5"))
-        opener.addheaders = headers
+        opener = cls.build_opener(auth)
         cls.wait(auth)
-        cls._log.debug("Downloading page '{0}'.".format(url))
-        webpage = cls._download_webpage(opener, url, data)
+        webpage = cls.download_url(opener, url, data)
         if auth:
             cls._save_cookies()
             today = date.today().isoformat()
@@ -206,8 +207,42 @@ class HTTPInterface(StaticClass):
         return webpage
 
     @classmethod
-    def _download_webpage(cls, opener, url, data, retry=1):
-        """ Download the page. """
+    def build_opener(cls, auth=False):
+        """
+        Build URL opener.
+
+        Keyworded arguments:
+            auth        --- Authenticate before request.
+
+        """
+        if auth:
+            cookies = cls._get_cookies()
+            opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookies))
+        else:
+            opener = urllib.request.build_opener()
+        headers = []
+        headers.append(("User-agent", cls._get_user_agent()))
+        headers.append(("Accept", "text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8"))
+        headers.append(("Accept-Language", "en-us,en;q=0.5"))
+        headers.append(("Accept-Charset", "utf-8,*;q=0.5"))
+        opener.addheaders = headers
+        return opener
+
+    @classmethod
+    def download_url(cls, opener, url, data=None, retry=1):
+        """
+        Download data from URL.
+
+        Arguments:
+            opener      --- Opener instance.
+            url         --- URL to download.
+
+        Keyworded arguments:
+            data        --- POST data.
+            retry       --- Number of seconds to retry in on failed download.
+
+        """
+        cls._log.debug("Downloading page '{0}'.".format(url))
         try:
             if data is not None:
                 webpage = opener.open(url, urllib.parse.urlencode(data).encode("utf-8"))
@@ -216,7 +251,7 @@ class HTTPInterface(StaticClass):
         except IOError:
             cls._log.error("An error occured while downloading '{0}', will retry in {1} seconds.".format(url, retry))
             sleep(retry)
-            return cls._download_webpage(opener, url, data, retry=min(5*retry, 600))
+            return cls.download_url(opener, url, data, retry=min(5*retry, 600))
         return webpage
 
     @classmethod
@@ -536,7 +571,7 @@ class BaseParser:
     Define common parts for all parsers.
 
     Attributes:
-        http        --- Object with 'request' method for retrieving/sending data.
+        http        --- HTTP interface object.
 
     """
 
@@ -1003,6 +1038,8 @@ _pcre_masks["seek_results"] = ("<th[^>]*>\s*<img [^>]*alt=['\"]Send to GPS['\"][
 _pcre_masks["seek_row"] = ("<tr bg[^>]*>(.*?)<td[^>]*>\s*</td>\s*</tr>", re.I|re.S)
 # <span id="ctl00_ContentBody_dlResults_ctl01_uxFavoritesValue" title="9 - Click to view the Favorites/Premium Logs ratio." class="favorite-rank">9</span>
 _pcre_masks["seek_favorites"] = ("<span[^>]*class=['\"]favorite-rank['\"][^>]*>([0-9]+)</span>", re.I)
+# <img id="ctl00_ContentBody_dlResults_ctl02_uxDTCacheTypeImage" src="../ImgGen/seek/CacheInfo.ashx?v=tQF7m" style="border-width:0px;" />
+_pcre_masks["seek_dts"] = ("<img [^>]*src=['\"][^'\"]*?/ImgGen/seek/CacheInfo\.ashx\?v=([a-z0-9]+)['\"][^>]*>", re.I)
 # <a href="/seek/cache_details.aspx?guid=dffb4ac7-65ea-409b-9e2c-134d41824db7" class="lnk"><img src="http://www.geocaching.com/images/wpttypes/sm/2.gif" alt="Traditional Cache" title="Traditional Cache" /></a> <a href="/seek/cache_details.aspx?guid=dffb4ac7-65ea-409b-9e2c-134d41824db7" class="lnk OldWarning Strike Strike"><span>Secska vyhlidka </span></a>
 # by Milancer
 # (GCNXY6)<br />
@@ -1034,9 +1071,12 @@ class SeekCache(BaseParser):
     """
 
     _url = "http://www.geocaching.com/seek/nearest.aspx?"
+    _dts_expired_hash = "29f417fe75c3d552da8ff9ab43a640d0"
+    _dts_codes = {}
 
     def __init__(self):
         self._log = logging.getLogger("gcparser.parser.SeekCache")
+        self._load_dts_hashes()
         BaseParser.__init__(self)
 
     def coord(self, lat, lon, dist):
@@ -1155,6 +1195,19 @@ class SeekCache(BaseParser):
         else:
             self._log.critical("Could not parse cache details.")
 
+        match = _pcre("seek_dts").search(data[6])
+        if match is not None:
+            dts = self._get_dts(match.group(1), cache["guid"])
+            if dts is not None:
+                cache["difficulty"], cache["terrain"], cache["size"] = dts
+                self._log.log_parser("difficulty = {0}".format(cache["difficulty"]))
+                self._log.log_parser("terrain = {0}".format(cache["terrain"]))
+                self._log.log_parser("size = {0}".format(cache["size"]))
+            else:
+                self._log.error("Expired DTS image - unable to get difficulty, terrain, size.")
+        else:
+            self._log.error("Difficulty, terrain, size not found.")
+
         match = _pcre("seek_date").match(data[7])
         if match is not None:
             cache["hidden"] = "{0:04d}-{1:02d}-{2:02d}".format(int(match.group(3))+2000, _months_abbr[match.group(2)], int(match.group(1)))
@@ -1198,6 +1251,49 @@ class SeekCache(BaseParser):
             cache["favorites"] = 0
             self._log.error("Favorites count not found.")
         return cache
+
+    def _load_dts_hashes(self):
+        data_dir = self.http.get_data_dir()
+        if data_dir is not None and os.path.isfile(os.path.join(data_dir, "dts.hash")):
+            filename = os.path.join(data_dir, "dts.hash")
+            self._log.debug("Loading DTS hashes from data dir.")
+        else:
+            filename = os.path.join(os.path.dirname(__file__), "dts.hash")
+            self._log.debug("Loading DTS hashes from distrib file.")
+        self._dts_hashes = {self._dts_expired_hash: None}
+        with open(filename, "r", encoding="utf-8") as fp:
+            for line in fp.readlines():
+                line = line.strip()
+                if not line:
+                    continue
+                line = line.split("\t")
+                self._dts_hashes[line[0]] = DTS(float(line[1]), float(line[2]), line[3])
+
+    def _save_dts_hashes(self):
+        data_dir = self.http.get_data_dir()
+        if data_dir is None or not os.path.isdir(data_dir):
+            self._log.warn("Invalid data dir, could not save DTS hashes.")
+            return
+        self._log.debug("Saving DTS hashes.")
+        filename = os.path.join(data_dir, "dts.hash")
+        with open(filename, "w", encoding="utf-8") as fp:
+            for hash_, dts in self._dts_hashes.items():
+                if hash_ != self._dts_expired_hash:
+                    fp.write("{0}\t{1}\t{2}\t{3}\n".format(hash_, dts[0], dts[1], dts[2]))
+
+    def _get_dts(self, code, guid):
+        if code not in self._dts_codes:
+            url = "http://www.geocaching.com/ImgGen/seek/CacheInfo.ashx?v={0}".format(code)
+            opener = self.http.build_opener()
+            data = self.http.download_url(opener, url).read()
+            hash_ = md5(data).hexdigest()
+            if hash_ not in self._dts_hashes:
+                cache = CacheDetails().get(guid)
+                dts = DTS(cache["difficulty"], cache["terrain"], cache["size"])
+                self._dts_hashes[hash_] = dts
+                self._save_dts_hashes()
+            self._dts_codes[code] = self._dts_hashes[hash_]
+        return self._dts_codes[code]
 
 
 class SeekResult(Sequence):
