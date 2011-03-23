@@ -396,7 +396,7 @@ class HTTPInterface(StaticClass):
             cls._log.debug("Not logged in, re-trying.")
             if not cls._login_attempt():
                 cls._log.critical("Login error.")
-                raise LoginError
+                raise LoginError("Cannot log in.")
         cls._log.debug("Logged in.")
 
     @classmethod
@@ -404,7 +404,7 @@ class HTTPInterface(StaticClass):
         """ Attempt to log in to geocaching.com. """
         cls._log.debug("Attempting to log in.")
         if cls._credentials.username is None or cls._credentials.password is None:
-            raise CredentialsError("Cannot log in - no credentials available.")
+            raise LoginError("Cannot log in - no credentials available.")
         webpage = cls.request("http://www.geocaching.com/", auth=True, check=False)
         data = {}
         data["ctl00$MiniProfile$loginUsername"] = cls._credentials.username
@@ -1204,7 +1204,7 @@ class SeekCache(BaseParser):
                 self._log.log_parser("terrain = {0}".format(cache["terrain"]))
                 self._log.log_parser("size = {0}".format(cache["size"]))
             else:
-                self._log.error("Expired DTS image - unable to get difficulty, terrain, size.")
+                self._log.error("Unknown DTS image - unable to get difficulty, terrain, size.")
         else:
             self._log.error("Difficulty, terrain, size not found.")
 
@@ -1288,12 +1288,21 @@ class SeekCache(BaseParser):
             data = self.http.download_url(opener, url).read()
             hash_ = md5(data).hexdigest()
             if hash_ not in self._dts_hashes:
-                cache = CacheDetails().get(guid)
-                dts = DTS(cache["difficulty"], cache["terrain"], cache["size"])
-                self._dts_hashes[hash_] = dts
-                self._save_dts_hashes()
-            self._dts_codes[code] = self._dts_hashes[hash_]
-        return self._dts_codes[code]
+                self._parse_dts_hash(hash_, guid)
+            if hash_ in self._dts_hashes:
+                self._dts_codes[code] = self._dts_hashes[hash_]
+        return self._dts_codes.get(code, None)
+
+    def _parse_dts_hash(self, hash_, guid):
+        try:
+            cache = CacheDetails().get(guid)
+            dts = DTS(cache["difficulty"], cache["terrain"], cache["size"])
+            if dts in self._dts_hashes.values():
+                self._log.error("Got values {0} for hash {1}, but they are already present in hash table - bug?".format(dts, hash_))
+            self._dts_hashes[hash_] = dts
+            self._save_dts_hashes()
+        except LoginError:
+            pass
 
 
 class SeekResult(Sequence):
