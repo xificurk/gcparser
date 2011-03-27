@@ -9,7 +9,15 @@ Classes:
     CacheDetails        --- Parse cache details from webpage source.
     MyGeocachingLogs    --- Parse and filter the list of my logs from webpage source.
     SeekCache           --- Parse caches in seek query from webpage source.
+    SeekCacheOCR        --- Improved version of SeekCache, which also parses direction,
+                            distance, difficulty, terrain and size of caches in the list.
+    SeekResult          --- Sequence wrapper for a result of seek query with lazy loading of next pages.
     Profile             --- Manage user's profile.
+    ImageDownloader     --- Thread for downloading images.
+    Image               --- Basic image manipulation.
+    Credentials         --- Named tuple for representing credentails.
+    CacheLog            --- Named tuple for representing log from cache listing.
+    LogItem             --- Named tuple for representing a log from user's profile'.
     CredentialsError    --- Raised on invalid credentials.
     LoginError          --- Raised when geocaching.com login fails.
 
@@ -21,15 +29,18 @@ __license__ = "GPL"
 
 __version__ = "0.7.1"
 
-from collections import defaultdict, namedtuple, Sequence
+from collections import defaultdict, namedtuple, Sequence, Callable
 from datetime import date, datetime, timedelta
 from hashlib import md5
 from html.parser import HTMLParser
 from http.cookiejar import CookieJar, LWPCookieJar
 import logging
+import os
 import os.path
 from random import randint
 import re
+import subprocess
+import threading
 from time import time, sleep
 import unicodedata
 import urllib.parse
@@ -41,7 +52,11 @@ __all__ = ["HTTPInterface",
            "CacheDetails",
            "MyGeocachingLogs",
            "SeekCache",
+           "SeekCacheOCR",
+           "SeekResult",
            "Profile",
+           "ImageDownloader",
+           "Image",
            "Credentials",
            "CacheLog",
            "LogItem",
@@ -74,10 +89,12 @@ class LoginError(AssertionError):
 ### Data containers & design patterns                    ###
 ############################################################
 
+""" Named tuple for representing credentails. """
 Credentials = namedtuple("Credentials", "username password")
+""" Named tuple for representing a log from cache listing. """
 CacheLog = namedtuple("CacheLog", "luid type date user user_id text")
+""" Named tuple for representing a log from user's profile'. """
 LogItem = namedtuple("LogItem", "luid type date cache")
-DTS = namedtuple("DTS", "difficulty terrain size")
 
 
 class StaticClass:
@@ -1038,6 +1055,8 @@ _pcre_masks["seek_results"] = ("<th[^>]*>\s*<img [^>]*alt=['\"]Send to GPS['\"][
 _pcre_masks["seek_row"] = ("<tr bg[^>]*>(.*?)<td[^>]*>\s*</td>\s*</tr>", re.I|re.S)
 # <span id="ctl00_ContentBody_dlResults_ctl01_uxFavoritesValue" title="9 - Click to view the Favorites/Premium Logs ratio." class="favorite-rank">9</span>
 _pcre_masks["seek_favorites"] = ("<span[^>]*class=['\"]favorite-rank['\"][^>]*>([0-9]+)</span>", re.I)
+# <img id="ctl00_ContentBody_dlResults_ctl01_uxDistanceAndHeading" title="Close..." src="../ImgGen/seek/CacheDir.ashx?k=CGRN%0c%05%08_%5dHBVV" style="height:30px;width:55px;border-width:0px;" />
+_pcre_masks["seek_dd"] = ("<img [^>]*src=['\"][^'\"]*?/ImgGen/seek/CacheDir\.ashx\?k=([^'\"]+)['\"][^>]*>", re.I)
 # <img id="ctl00_ContentBody_dlResults_ctl02_uxDTCacheTypeImage" src="../ImgGen/seek/CacheInfo.ashx?v=tQF7m" style="border-width:0px;" />
 _pcre_masks["seek_dts"] = ("<img [^>]*src=['\"][^'\"]*?/ImgGen/seek/CacheInfo\.ashx\?v=([a-z0-9]+)['\"][^>]*>", re.I)
 # <a href="/seek/cache_details.aspx?guid=dffb4ac7-65ea-409b-9e2c-134d41824db7" class="lnk"><img src="http://www.geocaching.com/images/wpttypes/sm/2.gif" alt="Traditional Cache" title="Traditional Cache" /></a> <a href="/seek/cache_details.aspx?guid=dffb4ac7-65ea-409b-9e2c-134d41824db7" class="lnk OldWarning Strike Strike"><span>Secska vyhlidka </span></a>
@@ -1071,12 +1090,9 @@ class SeekCache(BaseParser):
     """
 
     _url = "http://www.geocaching.com/seek/nearest.aspx?"
-    _dts_expired_hash = "29f417fe75c3d552da8ff9ab43a640d0"
-    _dts_codes = {}
 
     def __init__(self):
         self._log = logging.getLogger("gcparser.parser.SeekCache")
-        self._load_dts_hashes()
         BaseParser.__init__(self)
 
     def coord(self, lat, lon, dist):
@@ -1126,11 +1142,19 @@ class SeekCache(BaseParser):
             url         --- URL where to start search.
 
         """
-        data = self.http.request(url)
+        count, caches, post_data = self._get_page(url)
+        return SeekResult(caches, count, url, post_data, self)
+
+    def _get_page(self, url, post_data=None):
+        data = self.http.request(url, data=post_data)
+        count, caches, post_data = self._process_page(data)
+        return count, caches, post_data
+
+    def _process_page(self, data):
         post_data = self._parse_post_data(data)
         caches = self._parse_caches(data)
         count = self._parse_count(data)
-        return SeekResult(caches, count, url, post_data, self)
+        return count, caches, post_data
 
     def _parse_post_data(self, data):
         post_data = {}
@@ -1195,19 +1219,6 @@ class SeekCache(BaseParser):
         else:
             self._log.critical("Could not parse cache details.")
 
-        match = _pcre("seek_dts").search(data[6])
-        if match is not None:
-            dts = self._get_dts(match.group(1), cache["guid"])
-            if dts is not None:
-                cache["difficulty"], cache["terrain"], cache["size"] = dts
-                self._log.log_parser("difficulty = {0}".format(cache["difficulty"]))
-                self._log.log_parser("terrain = {0}".format(cache["terrain"]))
-                self._log.log_parser("size = {0}".format(cache["size"]))
-            else:
-                self._log.error("Unknown DTS image - unable to get difficulty, terrain, size.")
-        else:
-            self._log.error("Difficulty, terrain, size not found.")
-
         match = _pcre("seek_date").match(data[7])
         if match is not None:
             cache["hidden"] = "{0:04d}-{1:02d}-{2:02d}".format(int(match.group(3))+2000, _months_abbr[match.group(2)], int(match.group(1)))
@@ -1252,63 +1263,180 @@ class SeekCache(BaseParser):
             self._log.error("Favorites count not found.")
         return cache
 
-    def _load_dts_hashes(self):
-        data_dir = self.http.get_data_dir()
-        if data_dir is not None and os.path.isfile(os.path.join(data_dir, "dts.hash")):
-            filename = os.path.join(data_dir, "dts.hash")
-            self._log.debug("Loading DTS hashes from data dir.")
-        else:
-            filename = os.path.join(os.path.dirname(__file__), "dts.hash")
-            self._log.debug("Loading DTS hashes from distrib file.")
-        self._dts_hashes = {self._dts_expired_hash: None}
-        with open(filename, "r", encoding="utf-8") as fp:
+
+class SeekCacheOCR(SeekCache):
+    """
+    Improved version of SeekCache, which also parses direction, distance,
+    difficulty, terrain and size of caches in the list.
+
+    """
+
+    def __init__(self):
+        self._log = logging.getLogger("gcparser.parser.SeekCacheOCR")
+        self._load_patterns()
+        BaseParser.__init__(self)
+
+    def _load_patterns(self):
+        self.patterns = {}
+        with open(os.path.join(os.path.dirname(__file__), "patterns.txt"), "r", encoding="utf-8") as fp:
             for line in fp.readlines():
-                line = line.strip()
-                if not line:
-                    continue
-                line = line.split("\t")
-                self._dts_hashes[line[0]] = DTS(float(line[1]), float(line[2]), line[3])
+                line = line.strip("\n").split("\t")
+                if len(line) == 2:
+                    pattern = tuple(line[1].split(","))
+                    self.patterns[pattern] = line[0]
 
-    def _save_dts_hashes(self):
-        data_dir = self.http.get_data_dir()
-        if data_dir is None or not os.path.isdir(data_dir):
-            self._log.warn("Invalid data dir, could not save DTS hashes.")
-            return
-        self._log.debug("Saving DTS hashes.")
-        filename = os.path.join(data_dir, "dts.hash")
-        with open(filename, "w", encoding="utf-8") as fp:
-            for hash_, dts in self._dts_hashes.items():
-                if hash_ != self._dts_expired_hash:
-                    fp.write("{0}\t{1}\t{2}\t{3}\n".format(hash_, dts[0], dts[1], dts[2]))
+    def _match_pattern(self, pattern):
+        return self.patterns.get(pattern, None)
 
-    def _get_dts(self, code, guid):
-        if code not in self._dts_codes:
-            url = "http://www.geocaching.com/ImgGen/seek/CacheInfo.ashx?v={0}".format(code)
-            opener = self.http.build_opener()
-            data = self.http.download_url(opener, url).read()
-            hash_ = md5(data).hexdigest()
-            if hash_ not in self._dts_hashes:
-                self._parse_dts_hash(hash_, guid)
-            if hash_ in self._dts_hashes:
-                self._dts_codes[code] = self._dts_hashes[hash_]
-        return self._dts_codes.get(code, None)
+    def _process_page(self, data):
+        dd_threads = {}
+        for code in _pcre("seek_dd").findall(data):
+            if code not in dd_threads:
+                url = "http://www.geocaching.com/ImgGen/seek/CacheDir.ashx?k={0}".format(code)
+                thread = ImageDownloader(url, self.http)
+                thread.start()
+                dd_threads[code] = thread
+        dts_threads = {}
+        for code in _pcre("seek_dts").findall(data):
+            if code not in dts_threads:
+                url = "http://www.geocaching.com/ImgGen/seek/CacheInfo.ashx?v={0}".format(code)
+                thread = ImageDownloader(url, self.http)
+                thread.start()
+                dts_threads[code] = thread
+        count = self._parse_count(data)
+        post_data = self._parse_post_data(data)
+        self._dd = {}
+        for code in dd_threads:
+            dd_threads[code].join()
+            self._dd[code] = dd_threads[code].image
+        self._dts = {}
+        for code in dts_threads:
+            dts_threads[code].join()
+            self._dts[code] = dts_threads[code].image
+        caches = self._parse_caches(data)
+        return count, caches, post_data
 
-    def _parse_dts_hash(self, hash_, guid):
-        try:
-            cache = CacheDetails().get(guid)
-            dts = DTS(cache["difficulty"], cache["terrain"], cache["size"])
-            if dts in self._dts_hashes.values():
-                self._log.error("Got values {0} for hash {1}, but they are already present in hash table - bug?".format(dts, hash_))
-            self._dts_hashes[hash_] = dts
-            self._save_dts_hashes()
-        except LoginError:
-            pass
+    def _parse_cache_record(self, data):
+        cache = SeekCache._parse_cache_record(self, data)
+        match = _pcre("seek_dd").search(data[1])
+        if match is not None:
+            dd = self._get_dd(match.group(1))
+            if dd is not None:
+                cache["distance"], cache["direction"] = dd
+                self._log.log_parser("direction = {0}".format(cache["direction"]))
+                self._log.log_parser("distance = {0:.4f} km".format(cache["distance"]))
+            else:
+                self._log.error("Unknown DD image - unable to get direction, distance.")
+        match = _pcre("seek_dts").search(data[6])
+        if match is not None:
+            dts = self._get_dts(match.group(1))
+            if dts is not None:
+                cache["difficulty"], cache["terrain"], cache["size"] = dts
+                self._log.log_parser("difficulty = {0}".format(cache["difficulty"]))
+                self._log.log_parser("terrain = {0}".format(cache["terrain"]))
+                self._log.log_parser("size = {0}".format(cache["size"]))
+            else:
+                self._log.error("Unknown DTS image - unable to get difficulty, terrain, size.")
+        else:
+            self._log.error("Difficulty, terrain, size not found.")
+        return cache
+
+    def _get_dts(self, code):
+        if isinstance(self._dts[code], Image):
+            empty = lambda x: x.a < 100
+            img = self._dts[code].vsplit(empty=empty)
+            self._dts[code] = None
+            if len(img) != 2:
+                self._log.debug("DTS image does not have 2 parts.")
+                return None
+            # D/T
+            img_dt = img[0].hsplit(empty=empty)
+            self._log.debug("Got {0} chars in D/T part.".format(len(img_dt)))
+            dt = ""
+            for part in img_dt:
+                part = part.vstrip(empty=empty).bitmask(empty=empty)
+                char = self._match_pattern(part)
+                if char is None:
+                    self._log.debug("Unknown pattern.")
+                    return None
+                dt += char
+            dt = dt.split("/")
+            if len(dt) != 2:
+                self._log.debug("Invalid D/T values.")
+                return None
+            diff = float(dt[0])
+            terr = float(dt[1])
+            # Size
+            empty = lambda x: x.a < 100 or x.r < max(x.g, x.b)*2
+            img_size = img[1].strip(empty=empty).bitmask(empty=empty)
+            size = self._match_pattern(img_size)
+            if size is None:
+                self._log.debug("Unknown pattern.")
+                return None
+            # Result
+            self._dts[code] = (diff, terr, size)
+        return self._dts[code]
+
+    def _get_dd(self, code):
+        if isinstance(self._dd[code], Image):
+            empty = lambda x: x.a < 100
+            img = self._dd[code].vsplit(empty=empty)
+            self._dd[code] = None
+            if len(img) != 2:
+                self._log.debug("DD image does not have 2 parts.")
+                return None
+            # Direction
+            img_dir = img[0].hsplit(empty=empty)
+            img_dir.pop(0)
+            self._log.debug("Got {0} chars in Direction part.".format(len(img_dir)))
+            direction = ""
+            for part in img_dir:
+                part = part.vstrip(empty=empty).bitmask(empty=empty)
+                char = self._match_pattern(part)
+                if char is None:
+                    self._log.debug("Unknown pattern.")
+                    return None
+                direction += char
+            # Distance
+            img_dis = img[1].hsplit(empty=empty)
+            self._log.debug("Got {0} chars in Distance part.".format(len(img_dis)))
+            distance = ""
+            for part in img_dis:
+                part = part.vstrip(empty=empty).bitmask(empty=empty)
+                char = self._match_pattern(part)
+                if char is None:
+                    self._log.debug("Unknown pattern.")
+                    return None
+                distance += char
+            if distance.endswith("mi"):
+                distance = float(distance[0:-2]) * 1.609344
+            elif distance.endswith("ft"):
+                distance = float(distance[0:-2]) * 0.0003048
+            elif distance == "Here":
+                distance = float(0)
+            else:
+                self._log.debug("Invalid distance value.")
+                return None
+            self._dd[code] = (distance, direction)
+        return self._dd[code]
 
 
 class SeekResult(Sequence):
-    """ Sequence wrapper for a result of seek query with lazy loading of next pages. """
+    """
+    Sequence wrapper for a result of seek query with lazy loading of next pages.
+
+    """
 
     def __init__(self, caches, count, url, post_data, parser):
+        """
+        Arguments:
+            caches      --- Initial set of caches.
+            count       --- Total count of caches.
+            url         --- URL for future downloads.
+            post_data   --- POST data for future downloads.
+            parser      --- Parser object.
+
+        """
         self._log = logging.getLogger("gcparser.SeekResult")
         self._count = count
         self._caches = list(caches)
@@ -1319,11 +1447,10 @@ class SeekResult(Sequence):
         self._parser = parser
 
     def _load_next_page(self):
-        data = self._parser.http.request(self._url, data=self._post_data)
-        self._post_data = self._parser._parse_post_data(data)
-        caches = self._parser._parse_caches(data)
+        count, caches, post_data = self._parser._get_page(self._url, self._post_data)
         if not (len(caches) == 20 or len(caches) + len(self._caches) == self._count):
             self._log.critical("Seems like I missed some caches in the list, got only {0} caches on this page, total {1} caches out of {2}.".format(len(caches), len(caches)+len(self._caches), self._count))
+        self._post_data = post_data
         self._caches.extend(caches)
 
     def __getitem__(self, index):
@@ -1341,6 +1468,288 @@ class SeekResult(Sequence):
     def __len__(self):
         return self._count
 
+
+class ImageDownloader(threading.Thread):
+    """
+    Thread for downloading images.
+
+    Attributes:
+        data        --- Downloaded data.
+        image       --- Downloaded image as Image instance.
+
+    """
+
+    def __init__(self, url, http):
+        """
+        Arguments:
+            url     --- URL of the image.
+            http    --- HTTP interface object.
+
+        """
+        self.http = http
+        self.url = url
+        self.data = None
+        self.image = None
+        threading.Thread.__init__(self)
+
+    def run(self):
+        opener = self.http.build_opener()
+        self.data = self.http.download_url(opener, self.url).read()
+        try:
+            self.image = Image.from_data(self.data)
+        except Exception as e:
+            self.image = Image()
+
+
+class Image:
+    """
+    Basic image manipulation.
+
+    Attributes:
+        RGBA        --- Namedtuple for representing RGBA colors.
+        width       --- Width of the image.
+        height      --- Height of the image.
+        pixels      --- pixel data as [[pixel1_1, pixel2_1], [pixel1_2, pixel2_2]].
+
+    Methods:
+        from_data   --- Create image instance from PNG data (classmethod).
+        bitmask     --- Return tuple of strings (rows of the image) with each pixel
+                        represented by a character as empty or filled.
+        cut         --- Create a new Image instance from a part of the original image.
+        vstrip      --- Create a new Image instance without empty rows on top and bottom side.
+        hstrip      --- Create a new Image instance without empty columns on left and right side.
+        vsplit      --- Create a sequence of new Image instances from parts of the image
+                        separated by empty rows.
+        strip       --- Create a new Image instance without empty columns and rows on the sides.
+        hsplit      --- Create a sequence of new Image instances from parts of the image
+                        separated by empty columns.
+
+    """
+
+    RGBA = namedtuple("RGBA", "r g b a")
+
+    def __init__(self, pixels=[]):
+        """
+        Arguments:
+            pixels  --- Pixel data.
+
+        """
+        if len(pixels) > 0:
+            self.height = len(pixels)
+            self.width = len(pixels[0])
+        else:
+            self.width = 0
+            self.height = 0
+        self.pixels = pixels
+
+    @classmethod
+    def from_data(cls, data):
+        """
+        Create image instance from PNG data.
+
+        Arguments:
+            data    --- Construct Image instance from bytes of PNG image,
+                        or file-like object with read method.
+
+        """
+        if not isinstance(data, bytes):
+            if isinstance(getattr(data, "read", None), Callable):
+                data = data.read()
+            else:
+                raise TypeError("Invalid image data passed.")
+
+        if len(data) == 0:
+            return cls()
+
+        #TODO: Replace this by pure python implementation.
+        hash_ = md5(data).hexdigest()
+        pngfile = os.path.join("/tmp", "{0}.png".format(hash_))
+        txtfile = os.path.join("/tmp", "{0}.txt".format(hash_))
+        if not os.path.isfile(pngfile):
+            with open(pngfile, "wb") as fp:
+                fp.write(data)
+        if not os.path.isfile(txtfile):
+            subprocess.check_call(("convert", pngfile, txtfile))
+        pixels = [[]]
+        with open(txtfile, "r", encoding="utf-8") as fp:
+            lines = fp.readlines()
+            line = lines.pop(0)
+            match = re.search("# ImageMagick pixel enumeration: ([0-9]+),([0-9]+),", line, re.I)
+            if match is None:
+                raise ValueError("Could not parse header of txt file.")
+            width = int(match.group(1))
+            height = int(match.group(2))
+            for line in lines:
+                line = line.split(":")
+                point = line[0].split(",")
+                x, y = int(point[0]), int(point[1])
+                pixel = line[1].split("(")[1].split(")")[0].split(",")
+                pixel = cls.RGBA(int(pixel[0]), int(pixel[1]), int(pixel[2]), int(pixel[3]))
+                if len(pixels) == y and len(pixels[-1]) == width:
+                    pixels.append([])
+                if len(pixels) <= y or len(pixels[y]) != x:
+                    raise ValueError("Could not parse pixel data from txt file.")
+                pixels[y].append(pixel)
+        if len(pixels) != height or len(pixels[-1]) != width:
+            raise ValueError("Invalid image data.")
+        return cls(pixels)
+
+    def bitmask(self, empty=lambda x: x.a == 0, chars=" X"):
+        """
+        Return tuple of strings (rows of the image) with each pixel represented by
+        a character as empty or filled.
+
+        Keyworded arguments:
+            empty       --- Function returning True, if the pixel is considered empty.
+            chars       --- Sequence containing characters for empty and filled pixels.
+
+        """
+        mask = []
+        for y in range(self.height):
+            row = ""
+            for x in range(self.width):
+                px = self.pixels[y][x]
+                if empty(px):
+                    row += chars[0]
+                else:
+                    row += chars[1]
+            mask.append(row)
+        return tuple(mask)
+
+    def cut(self, left, top, right, bottom):
+        """
+        Create a new Image instance from a part of the original image.
+
+        Arguments:
+            left    --- Left border coordinate.
+            top     --- Top border coordinate.
+            right   --- Right border coordinate.
+            bottom  --- Bottom border coordinate.
+
+        """
+        pixels = []
+        for y in range(max(top, 0), min(bottom+1, self.height)):
+            row = []
+            for x in range(max(left, 0), min(right+1, self.width)):
+                row.append(self.pixels[y][x])
+            pixels.append(row)
+        return type(self)(pixels)
+
+    def vstrip(self, empty=lambda x: x.a == 0):
+        """
+        Create a new Image instance without empty rows on top and bottom side.
+
+        Keyworded arguments:
+            empty       --- Function returning True, if the pixel is considered empty.
+
+        """
+        top = self.height-1
+        bottom = 0
+        for y in range(self.height):
+            is_empty = True
+            for x in range(self.width):
+                if not empty(self.pixels[y][x]):
+                    is_empty = False
+                    break
+            if not is_empty:
+                top = min(y, top)
+                bottom = max(y, bottom)
+        return self.cut(0, top, self.width-1, bottom)
+
+    def hstrip(self, empty=lambda x: x.a == 0):
+        """
+        Create a new Image instance without empty columns on left and right side.
+
+        Keyworded arguments:
+            empty       --- Function returning True, if the pixel is considered empty.
+
+        """
+        left = self.width-1
+        right = 0
+        for x in range(self.width):
+            is_empty = True
+            for y in range(self.height):
+                if not empty(self.pixels[y][x]):
+                    is_empty = False
+                    break
+            if not is_empty:
+                left = min(x, left)
+                right = max(x, right)
+        return self.cut(left, 0, right, self.height-1)
+
+    def strip(self, empty=lambda x: x.a == 0):
+        """
+        Create a new Image instance without empty columns and rows on the sides.
+
+        Keyworded arguments:
+            empty       --- Function returning True, if the pixel is considered empty.
+
+        """
+        return self.vstrip(empty=empty).hstrip(empty=empty)
+
+    def vsplit(self, empty=lambda x: x.a == 0):
+        """
+        Create a sequence of new Image instances from parts of the image separated by
+        empty rows.
+
+        Keyworded arguments:
+            empty       --- Function returning True, if the pixel is considered empty.
+
+        """
+        parts = []
+        top = None
+        bottom = None
+        for y in range(self.height):
+            is_empty = True
+            for x in range(self.width):
+                if not empty(self.pixels[y][x]):
+                    is_empty = False
+                    break
+            if not is_empty:
+                if top is None:
+                    top = y
+                    bottom = y
+                else:
+                    bottom = y
+            elif top is not None:
+                parts.append(self.cut(0, top, self.width-1, bottom))
+                top = None
+                bottom = None
+        if top is not None:
+            parts.append(self.cut(0, top, self.width-1, bottom))
+        return parts
+
+    def hsplit(self, empty=lambda x: x.a == 0):
+        """
+        Create a sequence of new Image instances from parts of the image separated by
+        empty columns.
+
+        Keyworded arguments:
+            empty       --- Function returning True, if the pixel is considered empty.
+
+        """
+        parts = []
+        left = None
+        right = None
+        for x in range(self.width):
+            is_empty = True
+            for y in range(self.height):
+                if not empty(self.pixels[y][x]):
+                    is_empty = False
+                    break
+            if not is_empty:
+                if left is None:
+                    left = x
+                    right = x
+                else:
+                    right = x
+            elif left is not None:
+                parts.append(self.cut(left, 0, right, self.height-1))
+                left = None
+                right = None
+        if left is not None:
+            parts.append(self.cut(left, 0, right, self.height-1))
+        return parts
 
 
 ########################################
