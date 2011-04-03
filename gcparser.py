@@ -27,7 +27,7 @@ __author__ = "Petr Morávek (xificurk@gmail.com)"
 __copyright__ = "Copyright (C) 2009-2011 Petr Morávek"
 __license__ = "GPL"
 
-__version__ = "0.7.1"
+__version__ = "0.7.2"
 
 from collections import defaultdict, namedtuple, Sequence, Callable
 from datetime import date, datetime, timedelta
@@ -45,6 +45,8 @@ from time import time, sleep
 import unicodedata
 import urllib.parse
 import urllib.request
+
+import png
 
 
 __all__ = ["HTTPInterface",
@@ -1561,35 +1563,15 @@ class Image:
         if len(data) == 0:
             return cls()
 
-        #TODO: Replace this by pure python implementation.
-        hash_ = md5(data).hexdigest()
-        pngfile = os.path.join("/tmp", "{0}.png".format(hash_))
-        txtfile = os.path.join("/tmp", "{0}.txt".format(hash_))
-        if not os.path.isfile(pngfile):
-            with open(pngfile, "wb") as fp:
-                fp.write(data)
-        if not os.path.isfile(txtfile):
-            subprocess.check_call(("convert", pngfile, txtfile))
-        pixels = [[]]
-        with open(txtfile, "r", encoding="utf-8") as fp:
-            lines = fp.readlines()
-            line = lines.pop(0)
-            match = re.search("# ImageMagick pixel enumeration: ([0-9]+),([0-9]+),", line, re.I)
-            if match is None:
-                raise ValueError("Could not parse header of txt file.")
-            width = int(match.group(1))
-            height = int(match.group(2))
-            for line in lines:
-                line = line.split(":")
-                point = line[0].split(",")
-                x, y = int(point[0]), int(point[1])
-                pixel = line[1].split("(")[1].split(")")[0].split(",")
-                pixel = cls.RGBA(int(pixel[0]), int(pixel[1]), int(pixel[2]), int(pixel[3]))
-                if len(pixels) == y and len(pixels[-1]) == width:
-                    pixels.append([])
-                if len(pixels) <= y or len(pixels[y]) != x:
-                    raise ValueError("Could not parse pixel data from txt file.")
-                pixels[y].append(pixel)
+        reader = png.Reader(bytes=data).asRGBA8()
+        width = reader[0]
+        height = reader[1]
+        pixels = []
+        for rowData in reader[2]:
+            row = []
+            for i in range(0, len(rowData), 4):
+                row.append(cls.RGBA(rowData[i], rowData[i+1], rowData[i+2], rowData[i+3]))
+            pixels.append(row)
         if len(pixels) != height or len(pixels[-1]) != width:
             raise ValueError("Invalid image data.")
         return cls(pixels)
