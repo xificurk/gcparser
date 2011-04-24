@@ -1065,7 +1065,7 @@ _pcre_masks["seek_dts"] = ("<img [^>]*src=['\"][^'\"]*?/ImgGen/seek/CacheInfo\.a
 # by Milancer
 # (GCNXY6)<br />
 # Pardubicky kraj, Czech Republic
-_pcre_masks["seek_cache"] = ("(<a[^>]*>)?\s*<img src=['\"](http://www\.geocaching\.com)?/images/wpttypes/[^'\"]+['\"][^>]*title=\"([^\"]+)\"[^>]*>\s*(</a>)?\s*<a href=['\"](http://www\.geocaching\.com)?/seek/cache_details.aspx\?guid=([a-z0-9-]+)['\"]([^>]*class=['\"][^'\"]*?(\s+OldWarning)?(\s+Strike)?[^'\"]*?['\"])?[^>]*>\s*(<span[^>]*>)?\s*([^<]+)\s*(</span>)?\s*</a>\s*by (.*?)\s*\((GC[A-Z0-9]+)\)<br[^>]*>\s*(([^,<]+), )?([^<]+?)\s*\n", re.I)
+_pcre_masks["seek_cache"] = ("(<a[^>]*>)?\s*<img src=['\"](http://www\.geocaching\.com)?/images/wpttypes/[^'\"]+['\"][^>]*title=\"([^\"]+)\"[^>]*>\s*(</a>)?\s*<a href=['\"](http://www\.geocaching\.com)?/seek/cache_details.aspx\?guid=([a-z0-9-]+)['\"]([^>]*class=['\"][^'\"OS]*?(\s+OldWarning)?(\s+Strike)*?\s*['\"])?[^>]*>\s*(<span[^>]*>)?\s*([^<]+)\s*(</span>)?\s*</a>\s*by (.*?)\s*\((GC[A-Z0-9]+)\)<br[^>]*>\s*(([^,<]+), )?([^<]+?)\s*\n", re.I)
 # <a id="ctl00_ContentBody_dlResults_ctl02_uxTravelBugList" class="tblist"
 _pcre_masks["seek_items"] = ("<a [^>]*class=['\"]tblist['\"][^>]*>", re.I)
 # <img src="/images/small_profile.gif" alt="Premium Member Only Cache" title="Premium Member Only Cache" with="15" height="13" />
