@@ -956,7 +956,7 @@ class CacheDetails(BaseParser):
 #<a href="http://www.geocaching.com/seek/log.aspx?LUID=af2e28fa-e12e-4d2b-b6b1-64a2441996e3" target="_blank" title="Visit Log">Visit Log</a>
 #</td>
 #</tr>
-_pcre_masks["logs_item"] = ("<tr[^>]*>\s*<td[^>]*>\s*<img [^>]*alt=\"([^\"]+)\"[^>]*>\s*</td>\s*<td[^>]*>.*?</td>\s*<td[^>]*>\s*([0-9]+)/([0-9]+)/([0-9]+)\s*</td>\s*<td[^>]*>\s*(<a[^>]*>)?\s*<img src=['\"](http://www\.geocaching\.com)?/images/wpttypes/[^'\"]+['\"][^>]*title=\"([^\"]+)\"[^>]*>\s*(</a>)?\s*<a href=['\"](http://www\.geocaching\.com)?/seek/cache_details.aspx\?guid=([a-z0-9-]+)['\"][^>]*>\s*(<span class=['\"]Strike(\s*OldWarning)?['\"]>)?\s*([^<]+)\s*(</span>)?\s*</a>[^<]*</td>\s*<td[^<]*>\s*(([^,<]+), )?([^<]+?)(\s*&nbsp;)?\s*</td>\s*<td[^<]*>\s*<a href=['\"][^'\"]*/seek/log\.aspx\?LUID=([a-z0-9-]+)['\"][^>]*>Visit Log</a>\s*</td>\s*</tr>", re.I|re.S)
+_pcre_masks["logs_item"] = ("<tr[^>]*>\s*<td[^>]*>\s*<img [^>]*alt=\"([^\"]+)\"[^>]*>\s*</td>\s*<td[^>]*>.*?</td>\s*<td[^>]*>\s*([0-9]+)/([0-9]+)/([0-9]+)\s*</td>\s*<td[^>]*>\s*((<span[^>]*>)?<a[^>]*>)?\s*<img src=['\"](http://www\.geocaching\.com)?/images/wpttypes/[^'\"]+['\"][^>]*title=\"([^\"]+)\"[^>]*>\s*(</a>)?\s*<a href=['\"](http://www\.geocaching\.com)?/seek/cache_details.aspx\?guid=([a-z0-9-]+)['\"][^>]*>\s*(<span class=['\"]Strike(\s*OldWarning)?['\"]>)?\s*([^<]+)\s*(</span>)?\s*</a>(</span>)?[^<]*</td>\s*<td[^<]*>\s*(([^,<]+), )?([^<]+?)(\s*&nbsp;)?\s*</td>\s*<td[^>]*>\s*<a href=['\"][^'\"]*/seek/log\.aspx\?LUID=([a-z0-9-]+)['\"][^>]*>Visit Log</a>\s*</td>\s*</tr>", re.I|re.S)
 # <a href="http://www.geocaching.com/seek/cache_details.aspx?guid=331f0c62-ef78-4ab3-b8d7-be569246771d" class="ImageLink"><img src="http://www.geocaching.com/images/wpttypes/sm/2.gif" title="Traditional Cache" /></a> <a href="http://www.geocaching.com/seek/cache_details.aspx?guid=331f0c62-ef78-4ab3-b8d7-be569246771d">Stepankovi hrosi</a>&nbsp;
 # <a href="http://www.geocaching.com/seek/cache_details.aspx?guid=d3e80a41-4218-4136-bb63-ac0de3ef0b5a" class="ImageLink"><img src="http://www.geocaching.com/images/wpttypes/sm/8.gif" title="Unknown Cache" /></a> <a href="http://www.geocaching.com/seek/cache_details.aspx?guid=d3e80a41-4218-4136-bb63-ac0de3ef0b5a"><span class="Strike">Barva Kouzel</span></a>&nbsp;
 # <a href="http://www.geocaching.com/seek/cache_details.aspx?guid=29444383-4607-4e2d-bc65-bcf2e9919e5d" class="ImageLink"><img src="http://www.geocaching.com/images/wpttypes/sm/2.gif" title="Traditional Cache" /></a> <a href="http://www.geocaching.com/seek/cache_details.aspx?guid=29444383-4607-4e2d-bc65-bcf2e9919e5d"><span class="Strike OldWarning">Krizovatka na kopci / Crossroad on a hill</span></a>&nbsp;
@@ -991,6 +991,7 @@ class MyGeocachingLogs(BaseParser):
         """
         data = self.http.request(self._url, auth=True)
         expected_count = len(_pcre("logs_visit").findall(data))
+        self._log.debug("Expecting {0} logs...".format(expected_count))
         logs = []
         for log in _pcre("logs_item").findall(data):
             expected_count -= 1
@@ -1001,28 +1002,28 @@ class MyGeocachingLogs(BaseParser):
                 self._log.debug("Wrong log type, continuing...")
                 continue
             log_date = "{0:04d}-{1:02d}-{2:02d}".format(int(log[3]), int(log[1]), int(log[2]))
-            log_id = log[18]
+            log_id = log[20]
             self._log.log_parser("date = {0}".format(log_date))
             self._log.log_parser("luid = {0}".format(log_id))
 
             cache = {}
-            cache["type"] = _unescape(log[6]).strip()
+            cache["type"] = _unescape(log[7]).strip()
             # GS weird changes bug
             if cache["type"] == "Unknown Cache":
                 cache["type"] = "Mystery/Puzzle Cache"
             cache["disabled"] = 0
             cache["archived"] = 0
-            if log[10]:
+            if log[11]:
                 cache["disabled"] = 1
-                if log[11]:
+                if log[12]:
                     cache["archived"] = 1
-            if log[15]:
-                cache["province"] = _unescape(log[15]).strip()
+            if log[17]:
+                cache["province"] = _unescape(log[17]).strip()
             else:
                 cache["province"] = ""
-            cache["country"] = _unescape(log[16]).strip()
-            cache["guid"] = log[9]
-            cache["name"] = _unescape(_unescape(log[12])).strip()
+            cache["country"] = _unescape(log[18]).strip()
+            cache["guid"] = log[10]
+            cache["name"] = _unescape(_unescape(log[13])).strip()
             self._log.log_parser("cache_name = {0}".format(cache["name"]))
             self._log.log_parser("cache_type = {0}".format(cache["type"]))
             self._log.log_parser("cache_guid = {0}".format(cache["guid"]))
