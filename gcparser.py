@@ -1054,7 +1054,7 @@ class MyGeocachingLogs(BaseParser):
 # <td class="PageBuilderWidget"><span>Total Records: <b>5371</b> - Page: <b>1</b> of <b>269</b>
 _pcre_masks["search_totals"] = ("<td class=\"PageBuilderWidget\"><span>Total Records: <b>([0-9]+)</b>", re.I)
 _pcre_masks["seek_results"] = ("<th[^>]*>\s*<img [^>]*alt=['\"]Send to GPS['\"][^>]*>\s*</th>(.*?)</table>", re.I|re.S)
-_pcre_masks["seek_row"] = ("<tr bg[^>]*>(.*?)<td[^>]*>\s*</td>\s*</tr>", re.I|re.S)
+_pcre_masks["seek_row"] = ("<tr[^>]*>(.*?)<td[^>]*>\s*</td>\s*</tr>", re.I|re.S)
 # <span id="ctl00_ContentBody_dlResults_ctl01_uxFavoritesValue" title="9 - Click to view the Favorites/Premium Logs ratio." class="favorite-rank">9</span>
 _pcre_masks["seek_favorites"] = ("<span[^>]*class=['\"]favorite-rank['\"][^>]*>([0-9]+)</span>", re.I)
 # <img id="ctl00_ContentBody_dlResults_ctl01_uxDistanceAndHeading" title="Close..." src="../ImgGen/seek/CacheDir.ashx?k=CGRN%0c%05%08_%5dHBVV" style="height:30px;width:55px;border-width:0px;" />
@@ -1065,18 +1065,18 @@ _pcre_masks["seek_dts"] = ("<img [^>]*src=['\"][^'\"]*?/ImgGen/seek/CacheInfo\.a
 # by Milancer
 # (GCNXY6)<br />
 # Pardubicky kraj, Czech Republic
-_pcre_masks["seek_cache"] = ("(<a[^>]*>)?\s*<img src=['\"](http://www\.geocaching\.com)?/images/wpttypes/[^'\"]+['\"][^>]*title=\"([^\"]+)\"[^>]*>\s*(</a>)?\s*<a href=['\"](http://www\.geocaching\.com)?/seek/cache_details.aspx\?guid=([a-z0-9-]+)['\"]([^>]*class=['\"][^'\"OS]*?(\s+OldWarning)?(\s+Strike)*?\s*['\"])?[^>]*>\s*(<span[^>]*>)?\s*([^<]+)\s*(</span>)?\s*</a>\s*by (.*?)\s*\((GC[A-Z0-9]+)\)<br[^>]*>\s*(([^,<]+), )?([^<]+?)\s*\n", re.I)
+_pcre_masks["seek_cache"] = ("(<a[^>]*>)?\s*<img src=['\"](http://www\.geocaching\.com)?/images/wpttypes/[^'\"]+['\"][^>]*title=\"([^\"]+)\"[^>]*>\s*(</a>)?\s*<a href=['\"](http://www\.geocaching\.com)?/seek/cache_details.aspx\?guid=([a-z0-9-]+)['\"]([^>]*class=['\"][^'\"OS]*?(\s+OldWarning)?(\s+Strike)*?\s*['\"])?[^>]*>\s*(<span[^>]*>)?\s*([^<]+)\s*(</span>)?\s*</a>\s*<br[^>]*>\s*<span[^>]*>\s*by (.*?)\s*\|\s*(GC[A-Z0-9]+)\s*\|\s*(([^,<]+), )?([^<]+?)\s*</span>", re.I)
 # <a id="ctl00_ContentBody_dlResults_ctl02_uxTravelBugList" class="tblist"
 _pcre_masks["seek_items"] = ("<a [^>]*class=['\"]tblist['\"][^>]*>", re.I)
 # <img src="/images/small_profile.gif" alt="Premium Member Only Cache" title="Premium Member Only Cache" with="15" height="13" />
 _pcre_masks["seek_PMonly"] = ("<img [^>]*alt=['\"]Premium Member Only Cache['\"][^>]*>", re.I)
 # 30 Oct 09
-_pcre_masks["seek_date"] = ("\s*<td[^>]*>\s*([0-9]+) ([A-Z]+) ([0-9]+)", re.I)
+_pcre_masks["seek_date"] = ("\s*<td[^>]*>(\s*<span[^>]*>)?\s*([0-9]+) ([A-Z]+) ([0-9]+)", re.I)
 # 2 days ago
-_pcre_masks["seek_dateDays"] = ("\s*<td[^>]*>\s*([0-9]+) days ago", re.I)
+_pcre_masks["seek_dateDays"] = ("\s*<td[^>]*>(\s*<span[^>]*>)?\s*([0-9]+) days ago", re.I)
 # Yesterday
 # Today
-_pcre_masks["seek_dateWords"] = ("\s*<td[^>]*>\s*((Yester|To)day)", re.I)
+_pcre_masks["seek_dateWords"] = ("\s*<td[^>]*>(\s*<span[^>]*>)?\s*((Yester|To)day)", re.I)
 
 
 class SeekCache(BaseParser):
@@ -1223,24 +1223,24 @@ class SeekCache(BaseParser):
 
         match = _pcre("seek_date").match(data[7])
         if match is not None:
-            cache["hidden"] = "{0:04d}-{1:02d}-{2:02d}".format(int(match.group(3))+2000, _months_abbr[match.group(2)], int(match.group(1)))
+            cache["hidden"] = "{0:04d}-{1:02d}-{2:02d}".format(int(match.group(4))+2000, _months_abbr[match.group(3)], int(match.group(2)))
             self._log.log_parser("hidden = {0}".format(cache["hidden"]))
         else:
             self._log.error("Hidden date not found.")
 
         match = _pcre("seek_date").match(data[8])
         if match is not None:
-            cache["found"] = "{0:04d}-{1:02d}-{2:02d}".format(int(match.group(3))+2000, _months_abbr[match.group(2)], int(match.group(1)))
+            cache["found"] = "{0:04d}-{1:02d}-{2:02d}".format(int(match.group(4))+2000, _months_abbr[match.group(3)], int(match.group(2)))
         else:
             match = _pcre("seek_dateDays").match(data[8])
             if match is not None:
-                found_date = date.today() - timedelta(days=int(match.group(1)))
+                found_date = date.today() - timedelta(days=int(match.group(2)))
                 cache["found"] = found_date.isoformat()
             else:
                 match = _pcre("seek_dateWords").match(data[8])
                 if match is not None:
                     found_date = date.today()
-                    if match.group(1) == "Yesterday":
+                    if match.group(2) == "Yesterday":
                         found_date = found_date - timedelta(days=1)
                     cache["found"] = found_date.isoformat()
         if "found" in cache:
