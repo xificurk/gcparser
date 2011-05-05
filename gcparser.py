@@ -424,17 +424,15 @@ class HTTPInterface(StaticClass):
         cls._log.debug("Attempting to log in.")
         if cls._credentials.username is None or cls._credentials.password is None:
             raise LoginError("Cannot log in - no credentials available.")
-        webpage = cls.request("http://www.geocaching.com/", auth=True, check=False)
+        webpage = cls.request("https://www.geocaching.com/login/", auth=True, check=False)
         data = {}
-        data["ctl00$MiniProfile$loginUsername"] = cls._credentials.username
-        data["ctl00$MiniProfile$loginPassword"] = cls._credentials.password
-        data["ctl00$MiniProfile$LoginBtn"] = "Login"
-        data["ctl00$MiniProfile$uxRememberMe"] = "on"
-        data["ctl00$ContentBody$GCCode"] = "GC"
-        data["ctl00$ContentBody$saddress"] = "98103"
+        data["ctl00$SiteContent$tbUsername"] = cls._credentials.username
+        data["ctl00$SiteContent$tbPassword"] = cls._credentials.password
+        data["ctl00$SiteContent$btnSignIn"] = "Login"
+        data["ctl00$SiteContent$cbRememberMe"] = "on"
         for hidden_input in _pcre("hidden_input").findall(webpage):
             data[hidden_input[0]] = hidden_input[1]
-        webpage = cls.request("http://www.geocaching.com/Default.aspx", data=data, auth=True, check=False)
+        webpage = cls.request("https://www.geocaching.com/login/", data=data, auth=True, check=False)
         for cookie in cls._cookies:
             cls._log.debug("{0}: {1}".format(cookie.name, cookie.value))
             if cookie.name == "userid":
@@ -447,7 +445,7 @@ class HTTPInterface(StaticClass):
         cls._log.debug("Checking if we're really logged in...")
         if data is not None:
             for line in data.splitlines():
-                if line.find("You are not logged in.") != -1:
+                if line.find("<p class=\"NotSignedInText\">") != -1:
                     return False
         return True
 
@@ -613,16 +611,16 @@ _pcre_masks["PMowner"] = ("<span[^>]*>\s*A cache by ([^<]+)\s*</span>", re.I)
 _pcre_masks["PMsize"] = ("\s*<img [^>]*alt=['\"]Size: ([^'\"]+)['\"][^>]*/>", re.I)
 # <strong><span id="ctl00_ContentBody_lblDifficulty">Difficulty:</span></strong>
 # <img src="http://www.geocaching.com/images/stars/stars1.gif" alt="1 out of 5" />
-_pcre_masks["PMdifficulty"] = ("<strong><span[^>]*>Difficulty:</span></strong>\s*<img [^>]*alt=['\"]([0-9.]+) out of 5['\"][^>]*/>", re.I)
+_pcre_masks["PMdifficulty"] = ("<strong>\s*<span[^>]*>Difficulty:</span></strong>\s*<img [^>]*alt=['\"]([0-9.]+) out of 5['\"][^>]*/>", re.I)
 # <strong><span id="ctl00_ContentBody_lblTerrain">Terrain:</span></strong>
 # <img src="http://www.geocaching.com/images/stars/stars1_5.gif" alt="1.5 out of 5" />
-_pcre_masks["PMterrain"] = ("<strong><span[^>]*>Terrain:</span></strong>\s*<img [^>]*alt=['\"]([0-9.]+) out of 5['\"][^>]*/>", re.I)
+_pcre_masks["PMterrain"] = ("<strong>\s*<span[^>]*>Terrain:</span></strong>\s*<img [^>]*alt=['\"]([0-9.]+) out of 5['\"][^>]*/>", re.I)
 # <img id="ctl00_ContentBody_uxWptTypeImage" src="http://www.geocaching.com/images/wpttypes/2.gif" style="border-width:0px;vertical-align:middle" />
 _pcre_masks["PMcache_type"] = ("<img id=['\"]ctl00_ContentBody_uxWptTypeImage['\"] src=['\"][^'\"]*/images/wpttypes/(earthcache|mega|[0-9]+).gif['\"][^>]*>", re.I)
 # <p class="Warning">This is a Premium Member Only cache.</p>
 _pcre_masks["cache_pm"] = ("<p class=['\"]Warning['\"]>This is a Premium Member Only cache\.</p>", re.I)
 # <span class="favorite-value">8</span>
-_pcre_masks["cache_favorites"] = ("<span class=['\"]favorite-value['\"][^>]*>([0-9]+)</span>", re.I)
+_pcre_masks["cache_favorites"] = ("<span class=['\"]favorite-value['\"][^>]*>\s*([0-9]+)\s*</span>", re.I)
 # <meta name="description" content="Pendulum - Prague Travel Bug Hotel (GCHCE0) was created by Saman on 12/23/2003. It&#39;s a Regular size geocache, with difficulty of 2, terrain of 2.5. It&#39;s located in Hlavni mesto Praha, Czech Republic. Literary - kinetic cache with the superb view of the Praguepanorama. A suitable place for the incoming and outgoing travelbugs." />
 _pcre_masks["cache_details"] = ("<meta\s+name=\"description\" content=\"([^\"]+) \(GC[A-Z0-9]+\) was created by ([^\"]+) on ([0-9]+)/([0-9]+)/([0-9]+)\. It('|(&#39;))s a ([a-zA-Z ]+) size geocache, with difficulty of ([0-9.]+), terrain of ([0-9.]+). It('|(&#39;))s located in (([^,.]+), )?([^.]+)\.[^\"]*\"[^>]*>", re.I|re.S)
 # <a href="/about/cache_types.aspx" target="_blank" title="About Cache Types"><img src="/images/WptTypes/8.gif" alt="Unknown Cache" width="32" height="32" />
@@ -630,23 +628,24 @@ _pcre_masks["cache_type"] = ("<img src=['\"](http://www\.geocaching\.com)?/image
 # by <a href="http://www.geocaching.com/profile/?guid=ed7a2040-3bbb-485b-9b03-21ae8507d2d7&wid=92322d1b-d354-4190-980e-8964d7740161&ds=2">
 _pcre_masks["cache_owner_id"] = ("by <a href=['\"]http://www\.geocaching\.com/profile/\?guid=([a-z0-9]+-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+)&wid=([a-z0-9]+-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+)&ds=2['\"][^>]*>", re.I)
 # <p class="OldWarning"><strong>Cache Issues:</strong></p><ul class="OldWarning"><li>This cache is temporarily unavailable. Read the logs below to read the status for this cache.</li></ul></span>
-_pcre_masks["disabled"] = ("<p class=['\"]OldWarning['\"][^>]*><strong>Cache Issues:</strong></p><ul[^>]*><li>This cache (has been archived|is temporarily unavailable)[^<]*</li>", re.I)
+_pcre_masks["disabled"] = ("<p class=['\"][^'\"]*OldWarning[^'\"]*['\"][^>]*><strong>Cache Issues:</strong></p><ul[^>]*><li>This cache (has been archived|is temporarily unavailable)[^<]*</li>", re.I)
 # <span id="ctl00_ContentBody_LatLon" style="font-weight:bold;">N 50° 02.173 E 015° 46.386</span>
 _pcre_masks["cache_coords"] = ("<span id=['\"]ctl00_ContentBody_LatLon['\"][^>]*>([NS]) ([0-9]+)° ([0-9.]+) ([WE]) ([0-9]+)° ([0-9.]+)</span>", re.I)
 _pcre_masks["cache_shortDesc"] = ("<div class=['\"]UserSuppliedContent['\"]>\s*<span id=['\"]ctl00_ContentBody_ShortDescription['\"]>(.*?)</span>\s+</div>", re.I|re.S)
-_pcre_masks["cache_longDesc"] = ("<div class=['\"]UserSuppliedContent['\"]>\s*<span id=['\"]ctl00_ContentBody_LongDescription['\"]>(.*?)</span>\s*</div>\s*<p>\s+</p>\s+</td>", re.I|re.S)
+_pcre_masks["cache_longDesc"] = ("<div class=['\"]UserSuppliedContent['\"]>\s*<span id=['\"]ctl00_ContentBody_LongDescription['\"]>(.*?)</span>\s*</div>\s*<p>\s+</p>\s+<p>", re.I|re.S)
 """
 <div id="div_hint" class="HalfLeft">
                 Hint text
 </div>
 """
-_pcre_masks["cache_hint"] = ("<div id=['\"]div_hint['\"][^>]*>\s*(.*?)\s*</div>", re.I)
+_pcre_masks["cache_hint"] = ("<div id=['\"]div_hint['\"][^>]*>\s*(\S.*?)\s*</div>", re.I)
 """
-<div class="CacheDetailNavigationWidget Spacing">
-    <img src="/images/attributes/wheelchair-no.gif" alt="not wheelchair accessible" title="not wheelchair accessible" width="30" height="30" /> <img src="/images/attributes/firstaid-yes.gif" alt="needs maintenance" title="needs maintenance" width="30" height="30" /> <img src="/images/attributes/stealth-yes.gif" alt="stealth required" title="stealth required" width="30" height="30" /> <img src="/images/attributes/available-yes.gif" alt="available 24-7" title="available 24-7" width="30" height="30" /> <img src="/images/attributes/scenic-yes.gif" alt="scenic view" title="scenic view" width="30" height="30" /> <img src="/images/attributes/onehour-yes.gif" alt="takes less than 1  hour" title="takes less than 1  hour" width="30" height="30" /> <img src="/images/attributes/kids-yes.gif" alt="kid friendly" title="kid friendly" width="30" height="30" /> <img src="/images/attributes/dogs-yes.gif" alt="dogs allowed" title="dogs allowed" width="30" height="30" /> <img src="/images/attributes/attribute-blank.gif" alt="blank" title="blank" width="30" height="30" /> <img src="/images/attributes/attribute-blank.gif" alt="blank" title="blank" width="30" height="30" /> <img src="/images/attributes/attribute-blank.gif" alt="blank" title="blank" width="30" height="30" /> <img src="/images/attributes/attribute-blank.gif" alt="blank" title="blank" width="30" height="30" /> <p class="NoSpacing"><small><a href="/about/icons.aspx" title="What are Attributes?">What are Attributes?</a></small></p>
+Attributes</h3>
+<div class="WidgetBody">
+	<img src="/images/attributes/wheelchair-no.gif" alt="not wheelchair accessible" title="not wheelchair accessible" width="30" height="30" /> <img src="/images/attributes/firstaid-yes.gif" alt="needs maintenance" title="needs maintenance" width="30" height="30" /> <img src="/images/attributes/stealth-yes.gif" alt="stealth required" title="stealth required" width="30" height="30" /> <img src="/images/attributes/available-yes.gif" alt="available 24-7" title="available 24-7" width="30" height="30" /> <img src="/images/attributes/scenic-yes.gif" alt="scenic view" title="scenic view" width="30" height="30" /> <img src="/images/attributes/onehour-yes.gif" alt="takes less than 1  hour" title="takes less than 1  hour" width="30" height="30" /> <img src="/images/attributes/kids-yes.gif" alt="kid friendly" title="kid friendly" width="30" height="30" /> <img src="/images/attributes/dogs-yes.gif" alt="dogs allowed" title="dogs allowed" width="30" height="30" /> <img src="/images/attributes/attribute-blank.gif" alt="blank" title="blank" width="30" height="30" /> <img src="/images/attributes/attribute-blank.gif" alt="blank" title="blank" width="30" height="30" /> <img src="/images/attributes/attribute-blank.gif" alt="blank" title="blank" width="30" height="30" /> <img src="/images/attributes/attribute-blank.gif" alt="blank" title="blank" width="30" height="30" /> <p class="NoBottomSpacing"><small><a href="/about/icons.aspx" title="What are Attributes?">What are Attributes?</a></small></p>
 </div>
 """
-_pcre_masks["cache_attributes"] = ("<div class=\"CacheDetailNavigationWidget Spacing\">\s*(.*?)\s*<p[^>]*><small><a href=['\"]/about/icons\.aspx['\"] title=['\"]What are Attributes\?['\"]>What are Attributes\?</a></small></p>\s*</div>", re.I|re.S)
+_pcre_masks["cache_attributes"] = ("Attributes\s*</h3>\s*<div class=\"WidgetBody\">(.*?)\s*<p[^>]*><small><a href=['\"]/about/icons\.aspx['\"] title=['\"]What are Attributes\?['\"]>What are Attributes\?</a></small></p>\s*</div>", re.I|re.S)
 _pcre_masks["cache_attributes_item"] = ("title=\"([^\"]+)\"", re.I)
 """
     <span id="ctl00_ContentBody_uxTravelBugList_uxInventoryLabel">Inventory</span>
@@ -678,8 +677,8 @@ _pcre_masks["cache_inventory_item"] = ("<a href=['\"][^'\"]*/track/details\.aspx
 _pcre_masks["cache_visits"] = ("<span id=['\"]ctl00_ContentBody_lblFindCounts['\"][^>]*><p[^>]*>(.*?)</p></span>", re.I)
 # <img src="/images/icons/icon_smile.gif" alt="Found it" />113
 _pcre_masks["cache_log_count"] = ("<img[^>]*alt=\"([^\"]+)\"[^>]*/>([0-9]+)", re.I)
-_pcre_masks["cache_logs"] = ("<table class=\"LogsTable Table\">(.*?)</table>\s+<p>", re.I|re.S)
-_pcre_masks["cache_log"] = ("<tr><td[^>]*><strong><img.*?title=['\"]([^\"']+)['\"][^>]*/>&nbsp;([a-z]+) ([0-9]+)(, ([0-9]+))? by <a href=['\"](http://www\.geocaching\.com)?/profile/\?guid=([a-z0-9]+-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+)['\"][^>]*>([^<]+)</a></strong>(&nbsp;| )\([0-9]+ found\)<br\s*/><br\s*/>(.*?)<br\s*/><br\s*/><small><a href=['\"]log.aspx\?LUID=([a-z0-9-]+)['\"] title=['\"]View Log['\"]>View Log</a></small>", re.I|re.S)
+_pcre_masks["cache_logs"] = ("<table class=\"LogsTable[^\"]*\">(.*?)</table>\s+<p>", re.I|re.S)
+_pcre_masks["cache_log"] = ("<tr><td[^>]*><strong><img.*?title=['\"]([^\"']+)['\"][^>]*/>&nbsp;([a-z]+) ([0-9]+)(, ([0-9]+))? by <a href=['\"](http://www\.geocaching\.com)?/profile/\?guid=([a-z0-9]+-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+)['\"][^>]*>([^<]+)</a></strong>[^<]*<br\s*/><br\s*/>(.*?)<br\s*/><br\s*/><small><a href=['\"]log.aspx\?LUID=([a-z0-9-]+)['\"] title=['\"]View Log['\"]>View Log</a></small>", re.I|re.S)
 
 
 class CacheDetails(BaseParser):
@@ -928,7 +927,7 @@ class CacheDetails(BaseParser):
                         else:
                             year = datetime.now().year
                         log_date = "{0:04d}-{1:02d}-{2:02d}".format(int(year), int(_months_full[match.group(2)]), int(match.group(3)))
-                        details["logs"].append(CacheLog(match.group(11), match.group(1), log_date, match.group(8), match.group(7), match.group(10)))
+                        details["logs"].append(CacheLog(match.group(10), match.group(1), log_date, match.group(8), match.group(7), match.group(9)))
                 self._log.log_parser("Found {0} logs.".format(len(details["logs"])))
 
         return details
