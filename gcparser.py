@@ -27,7 +27,7 @@ __author__ = "Petr Morávek (xificurk@gmail.com)"
 __copyright__ = "Copyright (C) 2009-2011 Petr Morávek"
 __license__ = "GPL"
 
-__version__ = "0.7.3"
+__version__ = "0.7.4"
 
 from collections import defaultdict, namedtuple, Sequence, Callable
 from datetime import date, datetime, timedelta
