@@ -1,6 +1,9 @@
 CHANGES
 ============================================================================
 
+Release 0.7.5 (2011-07-17)
+    [FIX] Geocaching.com webpage layout update.
+
 Release 0.7.4 (2011-05-17)
     [FIX] Handling of download errors.
 

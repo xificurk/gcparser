@@ -27,7 +27,7 @@ __author__ = "Petr Morávek (xificurk@gmail.com)"
 __copyright__ = "Copyright (C) 2009-2011 Petr Morávek"
 __license__ = "LGPL 3.0"
 
-__version__ = "0.7.4"
+__version__ = "0.7.5"
 
 from collections import defaultdict, namedtuple, Sequence, Callable
 from datetime import date, datetime, timedelta
@@ -1061,11 +1061,13 @@ _pcre_masks["seek_favorites"] = ("<span[^>]*class=['\"]favorite-rank['\"][^>]*>(
 _pcre_masks["seek_dd"] = ("<img [^>]*src=['\"][^'\"]*?/ImgGen/seek/CacheDir\.ashx\?k=([^'\"]+)['\"][^>]*>", re.I)
 # <img id="ctl00_ContentBody_dlResults_ctl02_uxDTCacheTypeImage" src="../ImgGen/seek/CacheInfo.ashx?v=tQF7m" style="border-width:0px;" />
 _pcre_masks["seek_dts"] = ("<img [^>]*src=['\"][^'\"]*?/ImgGen/seek/CacheInfo\.ashx\?v=([a-z0-9]+)['\"][^>]*>", re.I)
-# <a href="/seek/cache_details.aspx?guid=dffb4ac7-65ea-409b-9e2c-134d41824db7" class="lnk"><img src="http://www.geocaching.com/images/wpttypes/sm/2.gif" alt="Traditional Cache" title="Traditional Cache" /></a> <a href="/seek/cache_details.aspx?guid=dffb4ac7-65ea-409b-9e2c-134d41824db7" class="lnk OldWarning Strike Strike"><span>Secska vyhlidka </span></a>
+# <a href="/seek/cache_details.aspx?guid=dffb4ac7-65ea-409b-9e2c-134d41824db7" class="lnk OldWarning Strike Strike"><span>Secska vyhlidka </span></a>
 # by Milancer
 # (GCNXY6)<br />
 # Pardubicky kraj, Czech Republic
-_pcre_masks["seek_cache"] = ("(<a[^>]*>)?\s*<img src=['\"](http://www\.geocaching\.com)?/images/wpttypes/[^'\"]+['\"][^>]*title=\"([^\"]+)\"[^>]*>\s*(</a>)?\s*<a href=['\"](http://www\.geocaching\.com)?/seek/cache_details.aspx\?guid=([a-z0-9-]+)['\"]([^>]*class=['\"][^'\"OS]*?(\s+OldWarning)?(\s+Strike)*?\s*['\"])?[^>]*>\s*(<span[^>]*>)?\s*([^<]+)\s*(</span>)?\s*</a>\s*<br[^>]*>\s*<span[^>]*>\s*by (.*?)\s*\|\s*(GC[A-Z0-9]+)\s*\|\s*(([^,<]+), )?([^<]+?)\s*</span>", re.I)
+_pcre_masks["seek_cache"] = ("<a href=['\"](http://www\.geocaching\.com)?/seek/cache_details.aspx\?guid=([a-z0-9-]+)['\"]([^>]*class=['\"][^'\"OS]*?(\s+OldWarning)?(\s+Strike)*?\s*['\"])?[^>]*>\s*(<span[^>]*>)?\s*([^<]+)\s*(</span>)?\s*</a>\s*<br[^>]*>\s*<span[^>]*>\s*by (.*?)\s*\|\s*(GC[A-Z0-9]+)\s*\|\s*(([^,<]+), )?([^<]+?)\s*</span>", re.I)
+# <img src="http://www.geocaching.com/images/wpttypes/sm/2.gif" alt="Traditional Cache" title="Traditional Cache" />
+_pcre_masks["seek_type"] = ("<img src=['\"](http://www\.geocaching\.com)?/images/wpttypes/[^'\"]+['\"][^>]*title=\"([^\"]+)\"[^>]*>", re.I)
 # <a id="ctl00_ContentBody_dlResults_ctl02_uxTravelBugList" class="tblist"
 _pcre_masks["seek_items"] = ("<a [^>]*class=['\"]tblist['\"][^>]*>", re.I)
 # <img src="/images/small_profile.gif" alt="Premium Member Only Cache" title="Premium Member Only Cache" with="15" height="13" />
@@ -1186,33 +1188,28 @@ class SeekCache(BaseParser):
 
     def _parse_cache_record(self, data):
         cache = {}
-        match = _pcre("seek_cache").search(data[4])
+        match = _pcre("seek_cache").search(data[5])
         if match is not None:
-            cache["type"] = _unescape(match.group(3)).strip()
-            # GS weird changes bug
-            if cache["type"] == "Unknown Cache":
-                cache["type"] = "Mystery/Puzzle Cache"
-            cache["guid"] = match.group(6)
-            if match.group(8) is not None:
+            cache["guid"] = match.group(2)
+            if match.group(4) is not None:
                 cache["archived"] = 1
             else:
                 cache["archived"] = 0
-            if match.group(9) is not None:
+            if match.group(5) is not None:
                 cache["disabled"] = 1
             else:
                 cache["disabled"] = 0
-            cache["name"] = _unescape(match.group(11)).strip()
-            cache["owner"] = _unescape(match.group(13)).strip()
-            cache["waypoint"] = match.group(14)
-            if match.group(16) is not None:
-                cache["province"] = _unescape(match.group(16)).strip()
+            cache["name"] = _unescape(match.group(7)).strip()
+            cache["owner"] = _unescape(match.group(9)).strip()
+            cache["waypoint"] = match.group(10)
+            if match.group(12) is not None:
+                cache["province"] = _unescape(match.group(12)).strip()
             else:
                 cache["province"] = ""
-            cache["country"] = _unescape(match.group(17)).strip()
+            cache["country"] = _unescape(match.group(13)).strip()
             self._log.log_parser("name = {0}".format(cache["name"]))
             self._log.log_parser("waypoint = {0}".format(cache["waypoint"]))
             self._log.log_parser("guid = {0}".format(cache["guid"]))
-            self._log.log_parser("type = {0}".format(cache["type"]))
             self._log.log_parser("owner = {0}".format(cache["owner"]))
             self._log.log_parser("disabled = {0}".format(cache["disabled"]))
             self._log.log_parser("archived = {0}".format(cache["archived"]))
@@ -1221,23 +1218,33 @@ class SeekCache(BaseParser):
         else:
             self._log.critical("Could not parse cache details.")
 
-        match = _pcre("seek_date").match(data[7])
+        match = _pcre("seek_type").search(data[4])
+        if match is not None:
+            cache["type"] = _unescape(match.group(2)).strip()
+            if cache["type"] == "Unknown Cache":
+                # GS weird changes bug
+                cache["type"] = "Mystery/Puzzle Cache"
+            self._log.log_parser("type = {0}".format(cache["type"]))
+        else:
+            self._log.error("Could not parse cache type.")
+
+        match = _pcre("seek_date").match(data[8])
         if match is not None:
             cache["hidden"] = "{0:04d}-{1:02d}-{2:02d}".format(int(match.group(4))+2000, _months_abbr[match.group(3)], int(match.group(2)))
             self._log.log_parser("hidden = {0}".format(cache["hidden"]))
         else:
             self._log.error("Hidden date not found.")
 
-        match = _pcre("seek_date").match(data[8])
+        match = _pcre("seek_date").match(data[9])
         if match is not None:
             cache["found"] = "{0:04d}-{1:02d}-{2:02d}".format(int(match.group(4))+2000, _months_abbr[match.group(3)], int(match.group(2)))
         else:
-            match = _pcre("seek_dateDays").match(data[8])
+            match = _pcre("seek_dateDays").match(data[9])
             if match is not None:
                 found_date = date.today() - timedelta(days=int(match.group(2)))
                 cache["found"] = found_date.isoformat()
             else:
-                match = _pcre("seek_dateWords").match(data[8])
+                match = _pcre("seek_dateWords").match(data[9])
                 if match is not None:
                     found_date = date.today()
                     if match.group(2) == "Yesterday":
@@ -1249,10 +1256,10 @@ class SeekCache(BaseParser):
             cache["found"] = None
             self._log.log_parser("Never found.")
 
-        cache["PMonly"] = _pcre("seek_PMonly").search(data[5]) is not None
+        cache["PMonly"] = _pcre("seek_PMonly").search(data[6]) is not None
         if cache["PMonly"]:
             self._log.log_parser("PM only cache.")
-        cache["items"] = _pcre("seek_items").search(data[5]) is not None
+        cache["items"] = _pcre("seek_items").search(data[6]) is not None
         if cache["items"]:
             self._log.log_parser("Cache has items inside.")
 
@@ -1329,7 +1336,7 @@ class SeekCacheOCR(SeekCache):
                 self._log.log_parser("distance = {0:.4f} km".format(cache["distance"]))
             else:
                 self._log.error("Unknown DD image - unable to get direction, distance.")
-        match = _pcre("seek_dts").search(data[6])
+        match = _pcre("seek_dts").search(data[7])
         if match is not None:
             dts = self._get_dts(match.group(1))
             if dts is not None:
