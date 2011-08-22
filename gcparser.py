@@ -27,7 +27,7 @@ __author__ = "Petr Morávek (xificurk@gmail.com)"
 __copyright__ = "Copyright (C) 2009-2011 Petr Morávek"
 __license__ = "LGPL 3.0"
 
-__version__ = "0.7.5"
+__version__ = "0.7.6"
 
 from collections import defaultdict, namedtuple, Sequence, Callable
 from datetime import date, datetime, timedelta
@@ -678,7 +678,7 @@ _pcre_masks["cache_visits"] = ("<span id=['\"]ctl00_ContentBody_lblFindCounts['\
 # <img src="/images/icons/icon_smile.gif" alt="Found it" />113
 _pcre_masks["cache_log_count"] = ("<img[^>]*alt=\"([^\"]+)\"[^>]*/>([0-9]+)", re.I)
 _pcre_masks["cache_logs"] = ("<table class=\"LogsTable[^\"]*\">(.*?)</table>\s+<p>", re.I|re.S)
-_pcre_masks["cache_log"] = ("<tr><td[^>]*><strong><img.*?title=['\"]([^\"']+)['\"][^>]*/>&nbsp;([a-z]+) ([0-9]+)(, ([0-9]+))? by <a href=['\"](http://www\.geocaching\.com)?/profile/\?guid=([a-z0-9]+-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+-[a-z0-9]+)['\"][^>]*>([^<]+)</a></strong>[^<]*<br\s*/><br\s*/>(.*?)<br\s*/><br\s*/><small><a href=['\"]log.aspx\?LUID=([a-z0-9-]+)['\"] title=['\"]View Log['\"]>View Log</a></small>", re.I|re.S)
+_pcre_masks["cache_log"] = ("<tr[^>]*><td[^>]*><div[^>]*><p[^>]*><strong><a href=['\"]/profile/\?guid=([a-z0-9-]+)['\"][^>]*>(.*?)</a></strong></p><p[^>]*><a[^>]*><img[^>]*></a></p></div><div[^>]*><div[^>]*><strong><img.*?title=\"([^\"]+)\"[^>]*/>[^<]*</strong></div><div[^>]*><span[^>]*>([a-z]+) ([0-9]+)(?:, ([0-9]+))?</span></div><div[^>]*><p class=['\"]LogText['\"]>(.*?)</p>(?:<table[^>]*class=['\"]LogImagesTable['\"][^>]*>.*?</table>)?<div[^>]*><small><a href=['\"]log.aspx\?LUID=([a-z0-9-]+)['\"] title=['\"]View Log['\"]>View Log</a></small>", re.I|re.S)
 
 
 class CacheDetails(BaseParser):
@@ -922,12 +922,12 @@ class CacheDetails(BaseParser):
                 for part in match.group(1).split("</tr>"):
                     match = _pcre("cache_log").match(part)
                     if match is not None:
-                        if match.group(5) is not None:
-                            year = match.group(5)
+                        if match.group(6) is not None:
+                            year = match.group(6)
                         else:
                             year = datetime.now().year
-                        log_date = "{0:04d}-{1:02d}-{2:02d}".format(int(year), int(_months_full[match.group(2)]), int(match.group(3)))
-                        details["logs"].append(CacheLog(match.group(10), match.group(1), log_date, match.group(8), match.group(7), match.group(9)))
+                        log_date = "{0:04d}-{1:02d}-{2:02d}".format(int(year), int(_months_full[match.group(4)]), int(match.group(5)))
+                        details["logs"].append(CacheLog(match.group(8), match.group(3), log_date, _unescape(match.group(2)), match.group(1), _clean_HTML(match.group(7))))
                 self._log.log_parser("Found {0} logs.".format(len(details["logs"])))
 
         return details
