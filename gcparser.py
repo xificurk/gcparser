@@ -34,6 +34,7 @@ from datetime import date, datetime, timedelta
 from hashlib import md5
 from html.parser import HTMLParser
 from http.cookiejar import CookieJar, LWPCookieJar
+import json
 import logging
 import os
 import os.path
@@ -677,8 +678,7 @@ _pcre_masks["cache_inventory_item"] = ("<a href=['\"][^'\"]*/track/details\.aspx
 _pcre_masks["cache_visits"] = ("<span id=['\"]ctl00_ContentBody_lblFindCounts['\"][^>]*><p[^>]*>(.*?)</p></span>", re.I)
 # <img src="/images/icons/icon_smile.gif" alt="Found it" />113
 _pcre_masks["cache_log_count"] = ("<img[^>]*alt=\"([^\"]+)\"[^>]*/>\s*([0-9,]+)", re.I)
-_pcre_masks["cache_logs"] = ("<table class=\"LogsTable[^\"]*\">(.*?)</table>\s+<p>", re.I|re.S)
-_pcre_masks["cache_log"] = ("<tr[^>]*><td[^>]*><div[^>]*><p[^>]*><strong><a href=['\"]/profile/\?guid=([a-z0-9-]+)['\"][^>]*>(.*?)</a></strong></p><p[^>]*><a[^>]*><img[^>]*></a></p></div><div[^>]*><div[^>]*><strong><img.*?title=\"([^\"]+)\"[^>]*/>[^<]*</strong></div><div[^>]*><span[^>]*>([a-z]+) ([0-9]+)(?:, ([0-9]+))?</span></div><div[^>]*><p class=['\"]LogText['\"]>(.*?)</p>(?:<table[^>]*class=['\"]LogImagesTable['\"][^>]*>.*?</table>)?<div[^>]*><small><a href=['\"]log.aspx\?LUID=([a-z0-9-]+)['\"] title=['\"]View Log['\"]>View Log</a></small>", re.I|re.S)
+_pcre_masks["cache_logs"] = ("//<!\[CDATA\[\s*\ninitalLogs = (.*);\s*\n//]]>", re.I)
 
 
 class CacheDetails(BaseParser):
@@ -697,36 +697,23 @@ class CacheDetails(BaseParser):
 
     logs = False
 
-    def __init__(self, logs=False):
-        """
-        Keyworded arguments:
-            logs        --- Whether to return complete list of logs by default.
-
-        """
+    def __init__(self):
         self._log = logging.getLogger("gcparser.parser.CacheDetails")
-        self.logs = logs
         BaseParser.__init__(self)
 
-    def get(self, id_, logs=None):
+    def get(self, id_):
         """
         Get cache details by guid or waypoint.
 
         Arguments:
             id_         --- Geocache waypoint or guid.
 
-        Keyworded arguments:
-            logs        --- Download complete list of logs.
-
         """
-        if logs is None:
-            logs = self.logs
         if _pcre("guid").match(id_) is not None:
             type_ = "guid"
         else:
             type_ = "wp"
         url = self._url + "&{0}={1}".format(type_, id_)
-        if logs:
-            url = url + "&log=y"
         data = self.http.request(url, auth=True)
 
         details = {}
@@ -919,15 +906,10 @@ class CacheDetails(BaseParser):
             details["logs"] = []
             match = _pcre("cache_logs").search(data)
             if match is not None:
-                for part in match.group(1).split("</tr>"):
-                    match = _pcre("cache_log").match(part)
-                    if match is not None:
-                        if match.group(6) is not None:
-                            year = match.group(6)
-                        else:
-                            year = datetime.now().year
-                        log_date = "{0:04d}-{1:02d}-{2:02d}".format(int(year), int(_months_full[match.group(4)]), int(match.group(5)))
-                        details["logs"].append(CacheLog(match.group(8), match.group(3), log_date, _unescape(match.group(2)), match.group(1), _clean_HTML(match.group(7))))
+                for row in json.loads(match.group(1))["data"]:
+                    m, d, y = row["Visited"].split("/")
+                    log_date = "{0:04d}-{1:02d}-{2:02d}".format(int(y), int(m), int(d))
+                    details["logs"].append(CacheLog(row["LogGuid"], row["LogType"], log_date, _unescape(row["UserName"]), row["AccountGuid"], _clean_HTML(row["LogText"])))
                 self._log.log_parser("Found {0} logs.".format(len(details["logs"])))
 
         return details
