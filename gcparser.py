@@ -676,7 +676,7 @@ _pcre_masks["cache_inventory_item"] = ("<a href=['\"][^'\"]*/track/details\.aspx
 # <span id="ctl00_ContentBody_lblFindCounts"><p><img src="/images/icons/icon_smile.gif" alt="Found it" />113&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="/images/icons/icon_note.gif" alt="Write note" />19&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="/images/icons/icon_remove.gif" alt="Needs Archived" />1&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="/images/icons/icon_disabled.gif" alt="Temporarily Disable Listing" />2&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="/images/icons/icon_enabled.gif" alt="Enable Listing" />1&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="/images/icons/icon_greenlight.gif" alt="Publish Listing" />1&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="/images/icons/icon_maint.gif" alt="Owner Maintenance" />2&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="/images/icons/big_smile.gif" alt="Post Reviewer Note" />3&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</p></span>
 _pcre_masks["cache_visits"] = ("<span id=['\"]ctl00_ContentBody_lblFindCounts['\"][^>]*><p[^>]*>(.*?)</p></span>", re.I)
 # <img src="/images/icons/icon_smile.gif" alt="Found it" />113
-_pcre_masks["cache_log_count"] = ("<img[^>]*alt=\"([^\"]+)\"[^>]*/>([0-9]+)", re.I)
+_pcre_masks["cache_log_count"] = ("<img[^>]*alt=\"([^\"]+)\"[^>]*/>\s*([0-9,]+)", re.I)
 _pcre_masks["cache_logs"] = ("<table class=\"LogsTable[^\"]*\">(.*?)</table>\s+<p>", re.I|re.S)
 _pcre_masks["cache_log"] = ("<tr[^>]*><td[^>]*><div[^>]*><p[^>]*><strong><a href=['\"]/profile/\?guid=([a-z0-9-]+)['\"][^>]*>(.*?)</a></strong></p><p[^>]*><a[^>]*><img[^>]*></a></p></div><div[^>]*><div[^>]*><strong><img.*?title=\"([^\"]+)\"[^>]*/>[^<]*</strong></div><div[^>]*><span[^>]*>([a-z]+) ([0-9]+)(?:, ([0-9]+))?</span></div><div[^>]*><p class=['\"]LogText['\"]>(.*?)</p>(?:<table[^>]*class=['\"]LogImagesTable['\"][^>]*>.*?</table>)?<div[^>]*><small><a href=['\"]log.aspx\?LUID=([a-z0-9-]+)['\"] title=['\"]View Log['\"]>View Log</a></small>", re.I|re.S)
 
@@ -913,7 +913,7 @@ class CacheDetails(BaseParser):
                 for part in match.group(1).split("&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"):
                     match = _pcre("cache_log_count").search(part)
                     if match is not None:
-                        details["visits"][_unescape(match.group(1)).strip()] = int(match.group(2))
+                        details["visits"][_unescape(match.group(1)).strip()] = int(match.group(2).replace(",", ""))
                 self._log.log_parser("visits = {0}".format(details["visits"]))
 
             details["logs"] = []
