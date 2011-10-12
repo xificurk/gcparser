@@ -27,7 +27,7 @@ __author__ = "Petr Morávek (xificurk@gmail.com)"
 __copyright__ = "Copyright (C) 2009-2011 Petr Morávek"
 __license__ = "LGPL 3.0"
 
-__version__ = "0.7.6"
+__version__ = "0.7.7"
 
 from collections import defaultdict, namedtuple, Sequence, Callable
 from datetime import date, datetime, timedelta
@@ -426,10 +426,10 @@ class HTTPInterface(StaticClass):
             raise LoginError("Cannot log in - no credentials available.")
         webpage = cls.request("https://www.geocaching.com/login/", auth=True, check=False)
         data = {}
-        data["ctl00$SiteContent$tbUsername"] = cls._credentials.username
-        data["ctl00$SiteContent$tbPassword"] = cls._credentials.password
-        data["ctl00$SiteContent$btnSignIn"] = "Login"
-        data["ctl00$SiteContent$cbRememberMe"] = "on"
+        data["ctl00$ContentBody$tbUsername"] = cls._credentials.username
+        data["ctl00$ContentBody$tbPassword"] = cls._credentials.password
+        data["ctl00$ContentBody$btnSignIn"] = "Login"
+        data["ctl00$ContentBody$cbRememberMe"] = "on"
         for hidden_input in _pcre("hidden_input").findall(webpage):
             data[hidden_input[0]] = hidden_input[1]
         webpage = cls.request("https://www.geocaching.com/login/", data=data, auth=True, check=False)
