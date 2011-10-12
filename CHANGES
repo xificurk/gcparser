@@ -2,6 +2,7 @@ CHANGES
 ============================================================================
 
 Release 0.7.7 (2011-10-12)
+    [CHG] New parsing of logs - only 25 latest logs are parsed (for now).
     [FIX] Geocaching.com login form change.
 
 Release 0.7.6 (2011-08-23)
