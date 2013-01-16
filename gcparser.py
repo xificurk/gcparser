@@ -27,7 +27,7 @@ __author__ = "Petr Morávek (petr@pada.cz)"
 __copyright__ = "Copyright (C) 2009-2012 Petr Morávek"
 __license__ = "LGPL 3.0"
 
-__version__ = "0.7.9"
+__version__ = "0.7.10"
 
 from collections import defaultdict, namedtuple, Sequence, Callable
 from datetime import date, datetime, timedelta
@@ -667,7 +667,7 @@ _pcre_masks["disabled"] = ("<p class=['\"][^'\"]*OldWarning[^'\"]*['\"][^>]*><st
 # <span id="uxLatLon" style="font-weight:bold;">N 49° 06.592 E 016° 27.837</span>
 _pcre_masks["cache_coords"] = ("<span id=['\"]uxLatLon['\"][^>]*>([NS]) ([0-9]+)° ([0-9.]+) ([WE]) ([0-9]+)° ([0-9.]+)</span>", re.I)
 _pcre_masks["cache_shortDesc"] = ("<div class=['\"]UserSuppliedContent['\"]>\s*<span id=['\"]ctl00_ContentBody_ShortDescription['\"]>(.*?)</span>\s+</div>", re.I|re.S)
-_pcre_masks["cache_longDesc"] = ("<div class=['\"]UserSuppliedContent['\"]>\s*<span id=['\"]ctl00_ContentBody_LongDescription['\"]>(.*?)</span>\s*</div>\s*<p>\s+</p>\s+<p>", re.I|re.S)
+_pcre_masks["cache_longDesc"] = ("<div class=['\"]UserSuppliedContent['\"]>\s*<span id=['\"]ctl00_ContentBody_LongDescription['\"]>(.*?)</span>\s*</div>\s*<p>\s+</p>\s+<p", re.I|re.S)
 """
 <div id="div_hint" class="HalfLeft">
                 Hint text

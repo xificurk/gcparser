@@ -1,6 +1,9 @@
 CHANGES
 ============================================================================
 
+Release 0.7.10 (2013-01-16)
+    [FIX] Fix parsing of Long Description in cache details.
+
 Release 0.7.9 (2011-11-30)
     [FIX] Fix parsing of LatLon data in cache details.
 
