@@ -9,8 +9,6 @@ Classes:
     CacheDetails        --- Parse cache details from webpage source.
     MyGeocachingLogs    --- Parse and filter the list of my logs from webpage source.
     SeekCache           --- Parse caches in seek query from webpage source.
-    SeekCacheOCR        --- Improved version of SeekCache, which also parses direction,
-                            distance, difficulty, terrain and size of caches in the list.
     SeekResult          --- Sequence wrapper for a result of seek query with lazy loading of next pages.
     Profile             --- Manage user's profile.
     ImageDownloader     --- Thread for downloading images.
@@ -27,7 +25,7 @@ __author__ = "Petr Morávek (petr@pada.cz)"
 __copyright__ = "Copyright (C) 2009-2012 Petr Morávek"
 __license__ = "LGPL 3.0"
 
-__version__ = "0.7.10"
+__version__ = "0.8.0"
 
 from collections import defaultdict, namedtuple, Sequence, Callable
 from datetime import date, datetime, timedelta
@@ -47,15 +45,12 @@ import unicodedata
 import urllib.parse
 import urllib.request
 
-import png
-
 
 __all__ = ["HTTPInterface",
            "BaseParser",
            "CacheDetails",
            "MyGeocachingLogs",
            "SeekCache",
-           "SeekCacheOCR",
            "SeekResult",
            "Profile",
            "ImageDownloader",
@@ -712,7 +707,7 @@ _pcre_masks["cache_inventory_item"] = ("<a href=['\"][^'\"]*/track/details\.aspx
 _pcre_masks["cache_visits"] = ("<span id=['\"]ctl00_ContentBody_lblFindCounts['\"][^>]*><p[^>]*>(.*?)</p></span>", re.I)
 # <img src="/images/icons/icon_smile.gif" alt="Found it" />113
 _pcre_masks["cache_log_count"] = ("<img[^>]*alt=\"([^\"]+)\"[^>]*/>\s*([0-9,]+)", re.I)
-_pcre_masks["cache_logs"] = ("//<!\[CDATA\[\s*\ninitalLogs = (.*);\s*\n//]]>", re.I)
+_pcre_masks["cache_logs"] = ("initalLogs = (\{.*\});", re.I)
 
 
 class CacheDetails(BaseParser):
@@ -1077,11 +1072,16 @@ _pcre_masks["seek_favorites"] = ("<span[^>]*class=['\"]favorite-rank['\"][^>]*>(
 _pcre_masks["seek_dd"] = ("<img [^>]*src=['\"][^'\"]*?/ImgGen/seek/CacheDir\.ashx\?k=([^'\"]+)['\"][^>]*>", re.I)
 # <img id="ctl00_ContentBody_dlResults_ctl02_uxDTCacheTypeImage" src="../ImgGen/seek/CacheInfo.ashx?v=tQF7m" style="border-width:0px;" />
 _pcre_masks["seek_dts"] = ("<img [^>]*src=['\"][^'\"]*?/ImgGen/seek/CacheInfo\.ashx\?v=([a-z0-9]+)['\"][^>]*>", re.I)
-# <a href="/seek/cache_details.aspx?guid=dffb4ac7-65ea-409b-9e2c-134d41824db7" class="lnk OldWarning Strike Strike"><span>Secska vyhlidka </span></a>
-# by Milancer
-# (GCNXY6)<br />
-# Pardubicky kraj, Czech Republic
-_pcre_masks["seek_cache"] = ("<a href=['\"](http://www\.geocaching\.com)?/seek/cache_details.aspx\?guid=([a-z0-9-]+)['\"]([^>]*class=['\"][^'\"OS]*?(\s+OldWarning)?(\s+Strike)*?\s*['\"])?[^>]*>\s*(<span[^>]*>)?\s*([^<]+)\s*(</span>)?\s*</a>\s*<br[^>]*>\s*<span[^>]*>\s*by (.*?)\s*\|\s*(GC[A-Z0-9]+)\s*\|\s*(([^,<]+), )?([^<]+?)\s*</span>", re.I)
+# <a href="http://www.geocaching.com/geocache/GC276HJ_tftc-50-strasik" class="lnk"><img src="http://www.geocaching.com/images/wpttypes/2.gif" alt="Traditional Cache" title="Traditional Cache" class="SearchResultsWptType" /></a></td><td class="Merge"> <a href="http://www.geocaching.com/geocache/GC276HJ_tftc-50-strasik" class="lnk  "><span>TFTC #50 STRASIK</span></a>
+# <br />
+# <span class="small">
+# by CZECH.TIR
+# |
+# GC276HJ
+# |
+# Stredocesky kraj, Czech Republic</span>
+#
+_pcre_masks["seek_cache"] = ("<a href=['\"](?:http://www\.geocaching\.com)?/geocache/GC[A-Z0-9]+_[^'\"]*['\"](?:[^>]*class=['\"][^'\"OS]*?(\s+OldWarning)?(\s+Strike)*?\s*['\"])?[^>]*>\s*(?:<span[^>]*>)?\s*([^<]+)\s*(?:</span>)?\s*</a>\s*<br[^>]*>\s*<span[^>]*>\s*by (.*?)\s*\|\s*(GC[A-Z0-9]+)\s*\|\s*(([^,<]+), )?([^<]+?)\s*</span>", re.I)
 # <img src="http://www.geocaching.com/images/wpttypes/sm/2.gif" alt="Traditional Cache" title="Traditional Cache" />
 _pcre_masks["seek_type"] = ("<img src=['\"](http://www\.geocaching\.com)?/images/wpttypes/[^'\"]+['\"][^>]*title=\"([^\"]+)\"[^>]*>", re.I)
 # <a id="ctl00_ContentBody_dlResults_ctl02_uxTravelBugList" class="tblist"
@@ -1206,26 +1206,24 @@ class SeekCache(BaseParser):
         cache = {}
         match = _pcre("seek_cache").search(data[5])
         if match is not None:
-            cache["guid"] = match.group(2)
-            if match.group(4) is not None:
+            if match.group(1) is not None:
                 cache["archived"] = 1
             else:
                 cache["archived"] = 0
-            if match.group(5) is not None:
+            if match.group(2) is not None:
                 cache["disabled"] = 1
             else:
                 cache["disabled"] = 0
-            cache["name"] = _unescape(match.group(7)).strip()
-            cache["owner"] = _unescape(match.group(9)).strip()
-            cache["waypoint"] = match.group(10)
-            if match.group(12) is not None:
-                cache["province"] = _unescape(match.group(12)).strip()
+            cache["name"] = _unescape(match.group(3)).strip()
+            cache["owner"] = _unescape(match.group(4)).strip()
+            cache["waypoint"] = match.group(5)
+            if match.group(7) is not None:
+                cache["province"] = _unescape(match.group(7)).strip()
             else:
                 cache["province"] = ""
-            cache["country"] = _unescape(match.group(13)).strip()
+            cache["country"] = _unescape(match.group(8)).strip()
             self._log.log_parser("name = {0}".format(cache["name"]))
             self._log.log_parser("waypoint = {0}".format(cache["waypoint"]))
-            self._log.log_parser("guid = {0}".format(cache["guid"]))
             self._log.log_parser("owner = {0}".format(cache["owner"]))
             self._log.log_parser("disabled = {0}".format(cache["disabled"]))
             self._log.log_parser("archived = {0}".format(cache["archived"]))
@@ -1289,58 +1287,8 @@ class SeekCache(BaseParser):
         return cache
 
 
+"""
 class SeekCacheOCR(SeekCache):
-    """
-    Improved version of SeekCache, which also parses direction, distance,
-    difficulty, terrain and size of caches in the list.
-
-    """
-
-    def __init__(self):
-        self._log = logging.getLogger("gcparser.parser.SeekCacheOCR")
-        self._load_patterns()
-        BaseParser.__init__(self)
-
-    def _load_patterns(self):
-        self.patterns = {}
-        with open(os.path.join(os.path.dirname(__file__), "patterns.txt"), "r", encoding="utf-8") as fp:
-            for line in fp.readlines():
-                line = line.strip("\n").split("\t")
-                if len(line) == 2:
-                    pattern = tuple(line[1].split(","))
-                    self.patterns[pattern] = line[0]
-
-    def _match_pattern(self, pattern):
-        return self.patterns.get(pattern, None)
-
-    def _process_page(self, data):
-        dd_threads = {}
-        for code in _pcre("seek_dd").findall(data):
-            if code not in dd_threads:
-                url = "http://www.geocaching.com/ImgGen/seek/CacheDir.ashx?k={0}".format(code)
-                thread = ImageDownloader(url, self.http)
-                thread.start()
-                dd_threads[code] = thread
-        dts_threads = {}
-        for code in _pcre("seek_dts").findall(data):
-            if code not in dts_threads:
-                url = "http://www.geocaching.com/ImgGen/seek/CacheInfo.ashx?v={0}".format(code)
-                thread = ImageDownloader(url, self.http)
-                thread.start()
-                dts_threads[code] = thread
-        count = self._parse_count(data)
-        post_data = self._parse_post_data(data)
-        self._dd = {}
-        for code in dd_threads:
-            dd_threads[code].join()
-            self._dd[code] = dd_threads[code].image
-        self._dts = {}
-        for code in dts_threads:
-            dts_threads[code].join()
-            self._dts[code] = dts_threads[code].image
-        caches = self._parse_caches(data)
-        return count, caches, post_data
-
     def _parse_cache_record(self, data):
         cache = SeekCache._parse_cache_record(self, data)
         match = _pcre("seek_dd").search(data[1])
@@ -1365,85 +1313,7 @@ class SeekCacheOCR(SeekCache):
         else:
             self._log.error("Difficulty, terrain, size not found.")
         return cache
-
-    def _get_dts(self, code):
-        if isinstance(self._dts[code], Image):
-            empty = lambda x: x.a < 100
-            img = self._dts[code].vsplit(empty=empty)
-            self._dts[code] = None
-            if len(img) != 2:
-                self._log.debug("DTS image does not have 2 parts.")
-                return None
-            # D/T
-            img_dt = img[0].hsplit(empty=empty)
-            self._log.debug("Got {0} chars in D/T part.".format(len(img_dt)))
-            dt = ""
-            for part in img_dt:
-                part = part.vstrip(empty=empty).bitmask(empty=empty)
-                char = self._match_pattern(part)
-                if char is None:
-                    self._log.debug("Unknown pattern.")
-                    return None
-                dt += char
-            dt = dt.split("/")
-            if len(dt) != 2:
-                self._log.debug("Invalid D/T values.")
-                return None
-            diff = float(dt[0])
-            terr = float(dt[1])
-            # Size
-            empty = lambda x: x.a < 100 or x.r < max(x.g, x.b)*2
-            img_size = img[1].strip(empty=empty).bitmask(empty=empty)
-            size = self._match_pattern(img_size)
-            if size is None:
-                self._log.debug("Unknown pattern.")
-                return None
-            # Result
-            self._dts[code] = (diff, terr, size)
-        return self._dts[code]
-
-    def _get_dd(self, code):
-        if isinstance(self._dd[code], Image):
-            empty = lambda x: x.a < 100
-            img = self._dd[code].vsplit(empty=empty)
-            self._dd[code] = None
-            if len(img) != 2:
-                self._log.debug("DD image does not have 2 parts.")
-                return None
-            # Direction
-            img_dir = img[0].hsplit(empty=empty)
-            img_dir.pop(0)
-            self._log.debug("Got {0} chars in Direction part.".format(len(img_dir)))
-            direction = ""
-            for part in img_dir:
-                part = part.vstrip(empty=empty).bitmask(empty=empty)
-                char = self._match_pattern(part)
-                if char is None:
-                    self._log.debug("Unknown pattern.")
-                    return None
-                direction += char
-            # Distance
-            img_dis = img[1].hsplit(empty=empty)
-            self._log.debug("Got {0} chars in Distance part.".format(len(img_dis)))
-            distance = ""
-            for part in img_dis:
-                part = part.vstrip(empty=empty).bitmask(empty=empty)
-                char = self._match_pattern(part)
-                if char is None:
-                    self._log.debug("Unknown pattern.")
-                    return None
-                distance += char
-            if distance.endswith("mi"):
-                distance = float(distance[0:-2]) * 1.609344
-            elif distance.endswith("ft"):
-                distance = float(distance[0:-2]) * 0.0003048
-            elif distance == "Here":
-                distance = float(0)
-            else:
-                self._log.debug("Invalid distance value.")
-                return None
-            self._dd[code] = (distance, direction)
-        return self._dd[code]
+"""
 
 
 class SeekResult(Sequence):
