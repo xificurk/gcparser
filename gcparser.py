@@ -1069,7 +1069,8 @@ _pcre_masks["seek_row"] = ("<tr[^>]*>(.*?)<td[^>]*>\s*</td>\s*</tr>", re.I|re.S)
 # <span id="ctl00_ContentBody_dlResults_ctl01_uxFavoritesValue" title="9 - Click to view the Favorites/Premium Logs ratio." class="favorite-rank">9</span>
 _pcre_masks["seek_favorites"] = ("<span[^>]*class=['\"]favorite-rank['\"][^>]*>([0-9]+)</span>", re.I)
 # <img id="ctl00_ContentBody_dlResults_ctl01_uxDistanceAndHeading" title="Close..." src="../ImgGen/seek/CacheDir.ashx?k=CGRN%0c%05%08_%5dHBVV" style="height:30px;width:55px;border-width:0px;" />
-_pcre_masks["seek_dd"] = ("<img [^>]*src=['\"][^'\"]*?/ImgGen/seek/CacheDir\.ashx\?k=([^'\"]+)['\"][^>]*>", re.I)
+# <span class="small NoWrap"><img src="/images/icons/compass/W.gif" alt="W" title="W" />W<br />1.4km</span>
+_pcre_masks["seek_dd"] = ("<img [^>]*src=['\"][^'\"]*?/images/icons/compass/[A-Z]+\.gif['\"][^>]*alt=['\"]([A-Z]+)['\"][^>]*>\s*[A-Z]+\s*<br[^>]*>([0-9.]+)km", re.I)
 # <img id="ctl00_ContentBody_dlResults_ctl02_uxDTCacheTypeImage" src="../ImgGen/seek/CacheInfo.ashx?v=tQF7m" style="border-width:0px;" />
 _pcre_masks["seek_dts"] = ("<img [^>]*src=['\"][^'\"]*?/ImgGen/seek/CacheInfo\.ashx\?v=([a-z0-9]+)['\"][^>]*>", re.I)
 # <a href="http://www.geocaching.com/geocache/GC276HJ_tftc-50-strasik" class="lnk"><img src="http://www.geocaching.com/images/wpttypes/2.gif" alt="Traditional Cache" title="Traditional Cache" class="SearchResultsWptType" /></a></td><td class="Merge"> <a href="http://www.geocaching.com/geocache/GC276HJ_tftc-50-strasik" class="lnk  "><span>TFTC #50 STRASIK</span></a>
@@ -1241,6 +1242,19 @@ class SeekCache(BaseParser):
             self._log.log_parser("type = {0}".format(cache["type"]))
         else:
             self._log.error("Could not parse cache type.")
+
+        match = _pcre("seek_dd").search(data[1])
+        if match is not None:
+            cache["direction"] = match.group(1).strip()
+            cache["distance"] = float(match.group(2))
+            self._log.log_parser("direction = {0}".format(cache["direction"]))
+            self._log.log_parser("distance = {0}".format(cache["distance"]))
+        else:
+            self._log.error("Could not parse cache distance/direction.")
+
+
+
+
 
         match = _pcre("seek_date").match(data[8])
         if match is not None:
