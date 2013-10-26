@@ -1070,9 +1070,10 @@ _pcre_masks["seek_row"] = ("<tr[^>]*>(.*?)<td[^>]*>\s*</td>\s*</tr>", re.I|re.S)
 _pcre_masks["seek_favorites"] = ("<span[^>]*class=['\"]favorite-rank['\"][^>]*>([0-9]+)</span>", re.I)
 # <img id="ctl00_ContentBody_dlResults_ctl01_uxDistanceAndHeading" title="Close..." src="../ImgGen/seek/CacheDir.ashx?k=CGRN%0c%05%08_%5dHBVV" style="height:30px;width:55px;border-width:0px;" />
 # <span class="small NoWrap"><img src="/images/icons/compass/W.gif" alt="W" title="W" />W<br />1.4km</span>
-_pcre_masks["seek_dd"] = ("<img [^>]*src=['\"][^'\"]*?/images/icons/compass/[A-Z]+\.gif['\"][^>]*alt=['\"]([A-Z]+)['\"][^>]*>\s*[A-Z]+\s*<br[^>]*>([0-9.]+)km", re.I)
-# <img id="ctl00_ContentBody_dlResults_ctl02_uxDTCacheTypeImage" src="../ImgGen/seek/CacheInfo.ashx?v=tQF7m" style="border-width:0px;" />
-_pcre_masks["seek_dts"] = ("<img [^>]*src=['\"][^'\"]*?/ImgGen/seek/CacheInfo\.ashx\?v=([a-z0-9]+)['\"][^>]*>", re.I)
+_pcre_masks["seek_dd"] = ("<img [^>]*src=['\"][^'\"]*?/images/icons/compass/[A-Z]+\.gif['\"][^>]*alt=['\"]([A-Z]+)['\"][^>]*>\s*[A-Z]+\s*<br[^>]*>([0-9.]+)(mi|ft)", re.I)
+# <span class="small">2.5/2.5</span><br />
+# <img src="/images/icons/container/small.gif" alt="Size: Small" title="Size: Small" />
+_pcre_masks["seek_dts"] = ("<span [^>]*>([1-5](?:\.[50])?)/([1-5](?:\.[50])?)</span>\s*<br[^>]*>\s*<img [^>]*title=[\"']Size: ([^\"']+)[\"'][^>]*>", re.I)
 # <a href="http://www.geocaching.com/geocache/GC276HJ_tftc-50-strasik" class="lnk"><img src="http://www.geocaching.com/images/wpttypes/2.gif" alt="Traditional Cache" title="Traditional Cache" class="SearchResultsWptType" /></a></td><td class="Merge"> <a href="http://www.geocaching.com/geocache/GC276HJ_tftc-50-strasik" class="lnk  "><span>TFTC #50 STRASIK</span></a>
 # <br />
 # <span class="small">
@@ -1247,14 +1248,26 @@ class SeekCache(BaseParser):
         if match is not None:
             cache["direction"] = match.group(1).strip()
             cache["distance"] = float(match.group(2))
+            unit = match.group(3)
+            if unit == "mi":
+                cache["distance"] *= 1.609344
+            elif unit == "ft":
+                cache["distance"] *= 0.0003048
+            else:
+                self._log.debug("Invalid distance value.")
             self._log.log_parser("direction = {0}".format(cache["direction"]))
-            self._log.log_parser("distance = {0}".format(cache["distance"]))
+            self._log.log_parser("distance = {:.2f}".format(cache["distance"]))
+
+        match = _pcre("seek_dts").search(data[7])
+        if match is not None:
+            cache["difficulty"] = float(match.group(1))
+            cache["terrain"] = float(match.group(2))
+            cache["size"] = match.group(3)
+            self._log.log_parser("difficulty = {0:.1f}".format(cache["difficulty"]))
+            self._log.log_parser("terrain = {0:.1f}".format(cache["terrain"]))
+            self._log.log_parser("size = {0}".format(cache["size"]))
         else:
-            self._log.error("Could not parse cache distance/direction.")
-
-
-
-
+            self._log.error("DTS not found.")
 
         match = _pcre("seek_date").match(data[8])
         if match is not None:
@@ -1300,34 +1313,6 @@ class SeekCache(BaseParser):
             self._log.error("Favorites count not found.")
         return cache
 
-
-"""
-class SeekCacheOCR(SeekCache):
-    def _parse_cache_record(self, data):
-        cache = SeekCache._parse_cache_record(self, data)
-        match = _pcre("seek_dd").search(data[1])
-        if match is not None:
-            dd = self._get_dd(match.group(1))
-            if dd is not None:
-                cache["distance"], cache["direction"] = dd
-                self._log.log_parser("direction = {0}".format(cache["direction"]))
-                self._log.log_parser("distance = {0:.4f} km".format(cache["distance"]))
-            else:
-                self._log.error("Unknown DD image - unable to get direction, distance.")
-        match = _pcre("seek_dts").search(data[7])
-        if match is not None:
-            dts = self._get_dts(match.group(1))
-            if dts is not None:
-                cache["difficulty"], cache["terrain"], cache["size"] = dts
-                self._log.log_parser("difficulty = {0}".format(cache["difficulty"]))
-                self._log.log_parser("terrain = {0}".format(cache["terrain"]))
-                self._log.log_parser("size = {0}".format(cache["size"]))
-            else:
-                self._log.error("Unknown DTS image - unable to get difficulty, terrain, size.")
-        else:
-            self._log.error("Difficulty, terrain, size not found.")
-        return cache
-"""
 
 
 class SeekResult(Sequence):
