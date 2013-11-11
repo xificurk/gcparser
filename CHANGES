@@ -1,6 +1,7 @@
 CHANGES
 ============================================================================
 
+Release 0.8.0 (2013-11-11)
     [FIX] Geocaching.com no longer masks direction and distance data by
           images, so we can parse it directly from HTML.
 
