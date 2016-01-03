@@ -1,3 +1,6 @@
+This package is no longer maintained!
+============================================================================
+
 About
 ============================================================================
 GCParser is python module for parsing geocaching.com website.
